@@ -1,0 +1,10 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+
+# sed backup files from installers
+*.bak
+
+# don't commit a test ledger if you run the installer inside this clone
+.aicontext/

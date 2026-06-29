@@ -1,0 +1,8 @@
+# Keep shell scripts LF so they run on macOS/Linux regardless of host OS.
+*.sh    text eol=lf
+# PowerShell is happy either way; use native CRLF on Windows.
+*.ps1   text eol=crlf
+# Normalize the rest to LF.
+*.md    text eol=lf
+*.json  text eol=lf
+LICENSE text eol=lf
