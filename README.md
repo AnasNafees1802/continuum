@@ -52,14 +52,40 @@ Any agent that reads one of those files participates automatically.
 
 ## Install
 
-Clone the repo once:
+### ⚡ One line, no clone (recommended)
+
+Installs Continuum into **every AI agent on your machine, once** — applies to all your projects:
+
+```powershell
+# Windows / PowerShell
+irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.ps1 | iex
+```
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.sh | bash
+```
+
+That downloads the repo to a temp folder, runs the global installer, and cleans up. Variations:
+
+| Goal | Windows | macOS / Linux |
+|------|---------|---------------|
+| Force **all** known agents | `$env:CONTINUUM_ALL='1'; irm …/bootstrap.ps1 \| iex` | `curl -fsSL …/bootstrap.sh \| CONTINUUM_ALL=1 bash` |
+| **Per-project** ledger in current dir | `$env:CONTINUUM_MODE='project'; irm …/bootstrap.ps1 \| iex` | `curl -fsSL …/bootstrap.sh \| CONTINUUM_MODE=project bash` |
+
+> Piping a script from the internet to your shell runs remote code. That's standard for installers,
+> but you should trust the source — read [`bootstrap.ps1`](bootstrap.ps1) / [`bootstrap.sh`](bootstrap.sh)
+> first if you like. Prefer not to pipe? Use the clone method below.
+
+---
+
+### Or clone and run the installer yourself
 
 ```bash
 git clone https://github.com/AnasNafees1802/continuum.git
 cd continuum
 ```
 
-### Option A — Global: install once, for every agent (recommended)
+#### Option A — Global: install once, for every agent (recommended)
 
 Wires the Continuum protocol into each agent's **global** config so *every* project you open in
 *any* agent follows it automatically (when that project has a `.aicontext/` folder). Run it once
@@ -90,7 +116,7 @@ It detects which agents you have and writes to each one's global instruction fil
 After this, the only per-project step is creating the `.aicontext/` ledger — which any agent will
 do for you on request (Claude self-bootstraps; or run Option B).
 
-### Option B — Per-project: set up the ledger + adapter files in one repo
+#### Option B — Per-project: set up the ledger + adapter files in one repo
 
 Run from the cloned folder, pointing at the project you want continuity for:
 
@@ -131,14 +157,7 @@ root. Useful when you *haven't* done the global install, or want the adapters co
 - **History importer** — bootstrap `.aicontext/` from an agent's existing native logs
   (Claude Code's `~/.claude/projects/*.jsonl`, then Codex/Cursor/Gemini), inspired by
   [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer).
-- One-line remote install, e.g.:
-  ```powershell
-  irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/install-global.ps1 | iex
-  ```
-  ```bash
-  curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/install-global.sh | bash
-  ```
-  *(Planned — the remote scripts will fetch templates over the network so no clone is needed.)*
+- ✅ ~~One-line remote install~~ — shipped (see [One line, no clone](#-one-line-no-clone-recommended)).
 - More native adapters as agents diverge from `AGENTS.md`.
 
 ## Author
