@@ -1,12 +1,15 @@
 {
   "continuum": {
-    "schemaVersion": "1.0",
+    "schemaVersion": "1.1",
     "project": "{{PROJECT_NAME}}",
     "createdAt": "{{DATE}}",
     "lastUpdated": "{{DATE}}",
     "lastAgent": "installer",
     "agentsSeen": [],
     "sessionCount": 0,
+    "handoffAt": null,
+    "lastCommit": null,
+    "lastSessionId": null,
     "files": {
       "state": ".aicontext/STATE.md",
       "tasks": ".aicontext/TASKS.md",

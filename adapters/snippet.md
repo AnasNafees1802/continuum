@@ -15,7 +15,7 @@ resume exactly where another left off (after switching tools or hitting a usage 
 **BEFORE you end, run low on context, or hand off — do this proactively:**
 1. Overwrite the live sections of `.aicontext/STATE.md` (Current focus, Status, Next steps, Blockers).
 2. Append a dated entry to `.aicontext/JOURNAL.md` (summary, changes, decisions, exact *Left off at*).
-3. Bump `.aicontext/manifest.json` (`lastUpdated`, `lastAgent`, `agentsSeen`, `sessionCount`).
+3. Run the `continuum save` helper (`.claude/skills/continuum/bin/continuum.{ps1,sh}`) — it stamps `.aicontext/manifest.json` (`lastUpdated`, `handoffAt`, `lastAgent`, `agentsSeen`, `sessionCount`, git commit) and rotates the journal. If unavailable, bump `manifest.json` by hand.
 
-Use real shell timestamps (`date` / `Get-Date`). `STATE.md` is living (overwrite); `JOURNAL.md` and `DECISIONS.md` are append-only (newest on top).
+Use real shell timestamps (`date` / `Get-Date`). `STATE.md` is living (overwrite); `JOURNAL.md` and `DECISIONS.md` are append-only (newest on top). **Trust but verify:** reconcile `STATE.md` against `git log`/`git status` if the ledger looks stale. Continuum hooks automate the catch-up and handoff prompts on Claude Code, Codex, Gemini and Cursor; on any agent, `continuum import --from auto` reconstructs a session cut off by a usage limit or crash from the last agent's transcript plus git.
 <!-- CONTINUUM:END -->
