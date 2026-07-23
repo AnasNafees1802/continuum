@@ -38,7 +38,7 @@ for event, matcher, sub in [("SessionStart", "startup|resume|clear", "catch-up")
                             ("Stop", "", "guard")]:
     cmd = 'bash "%s" %s' % (sc, sub)
     kept = [g for g in hooks.get(event, [])
-            if "continuum" not in " ".join(h.get("command", "") for h in g.get("hooks", []))]
+            if not any(t in " ".join(h.get("command", "") for h in g.get("hooks", [])) for t in ("continuum.ps1", "continuum.sh"))]
     kept.append({"matcher": matcher, "hooks": [{"type": "command", "command": cmd}]})
     hooks[event] = kept
 with open(p, "w") as fh:

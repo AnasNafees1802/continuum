@@ -65,7 +65,7 @@ function Set-ContinuumHooks($settingsPath, $cmdBuilder) {
         if ($hooks.PSObject.Properties.Name -contains $d.event) {
             foreach ($grp in @($hooks.($d.event))) {
                 $cmds = (@($grp.hooks) | ForEach-Object { $_.command }) -join ' '
-                if ($cmds -notmatch 'continuum') { $kept += $grp }
+                if ($cmds -notmatch 'continuum\.(ps1|sh)') { $kept += $grp }
             }
         }
         $arr = [object[]](@($kept) + $entry)

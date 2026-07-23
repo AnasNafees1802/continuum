@@ -416,9 +416,10 @@ if (-not $ROOT) {
   exit 1
 }
 switch ($Command) {
-  'catch-up' { Cmd-CatchUp $ROOT }
-  'precompact' { Cmd-PreCompact }
-  'guard' { Cmd-Guard $ROOT }
+  # Hook commands are FAIL-SAFE: swallow any error and exit 0 so a failure can never break the host.
+  'catch-up' { try { Cmd-CatchUp $ROOT } catch {}; exit 0 }
+  'precompact' { try { Cmd-PreCompact } catch {}; exit 0 }
+  'guard' { try { Cmd-Guard $ROOT } catch {}; exit 0 }
   'save' { Cmd-Save $ROOT }
   'compact' { Cmd-Compact $ROOT $false }
   'import' { Cmd-Import $ROOT }

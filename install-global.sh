@@ -55,7 +55,7 @@ def cmdps(a): return 'powershell -ExecutionPolicy Bypass -File "%s" %s' % (ps, a
 if fmt=="cursor": d["version"]=1
 for spec in defs:
     e=spec["e"]; a=spec["a"]; m=spec.get("m","")
-    kept=[g for g in hooks.get(e, []) if "continuum" not in json.dumps(g)]
+    kept=[g for g in hooks.get(e, []) if not any(t in json.dumps(g) for t in ("continuum.ps1","continuum.sh"))]
     if fmt=="cursor":     entry={"command":cmdsh(a), "type":"command"}
     elif fmt=="windsurf": entry={"command":cmdsh(a), "powershell":cmdps(a)}
     else:                 entry={"matcher":m, "hooks":[{"type":"command","command":cmdsh(a)}]}

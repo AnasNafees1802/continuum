@@ -473,9 +473,11 @@ if ! ROOT="$(find_root)"; then
 fi
 
 case "$CMD" in
-  catch-up)   cmd_catch_up "$@" ;;
-  precompact) cmd_precompact "$@" ;;
-  guard)      cmd_guard ;;
+  # Hook commands are FAIL-SAFE: any internal failure must never break the host agent —
+  # swallow errors and always exit 0 (emitting valid JSON or nothing, never half-output).
+  catch-up)   cmd_catch_up "$@" 2>/dev/null || true; exit 0 ;;
+  precompact) cmd_precompact "$@" 2>/dev/null || true; exit 0 ;;
+  guard)      cmd_guard 2>/dev/null || true; exit 0 ;;
   save)       cmd_save "$@" ;;
   compact)    cmd_compact "$@" ;;
   import)     cmd_import "$@" ;;

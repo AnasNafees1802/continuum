@@ -49,7 +49,7 @@ function Load-Json($file) {
 }
 function Strip-Continuum($arr) {
     $kept = @()
-    foreach ($g in @($arr)) { if (($g | ConvertTo-Json -Depth 8 -Compress) -notmatch 'continuum') { $kept += $g } }
+    foreach ($g in @($arr)) { if (($g | ConvertTo-Json -Depth 8 -Compress) -notmatch 'continuum\.(ps1|sh)') { $kept += $g } }
     return , $kept
 }
 function Ensure-Hooks($s) { if (-not ($s.PSObject.Properties.Name -contains 'hooks') -or -not $s.hooks) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force }; return $s }
