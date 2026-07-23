@@ -56,14 +56,22 @@ function Set-Prop { param($obj, $name, $value) if ($obj.PSObject.Properties.Name
 function Marker-Dir { param($r) Join-Path $r '.aicontext\.session' }
 function Marker-File { param($r, $sid) if (-not $sid) { $sid = 'default' }; Join-Path (Marker-Dir $r) ($sid + '.env') }
 function Marker-Get { param($file, $key) if (-not (Test-Path $file)) { return $null }; foreach ($line in Get-Content $file) { if ($line -match "^$key=(.*)$") { return $Matches[1] } }; return $null }
-function Marker-Set {
-  param($file, $key, $value)
+# Atomic write: build content fully, write a temp file, then rename over the target.
+# A truncated/empty marker can never appear even if the hook process is killed mid-run.
+function Write-Lines-Atomic {
+  param($file, $lines)
   $dir = Split-Path $file -Parent
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  $tmp = "$file.tmp.$PID"
+  Set-Content -Path $tmp -Value $lines -Encoding ascii
+  Move-Item -Path $tmp -Destination $file -Force
+}
+function Marker-Set {
+  param($file, $key, $value)
   $lines = @(); $found = $false
   if (Test-Path $file) { $lines = @(foreach ($line in Get-Content $file) { if ($line -match "^$key=") { $found = $true; "$key=$value" } else { $line } }) }
   if (-not $found) { $lines += "$key=$value" }
-  Set-Content -Path $file -Value $lines -Encoding ascii
+  Write-Lines-Atomic $file $lines
 }
 
 # stdin (hook JSON)
@@ -181,12 +189,9 @@ function Cmd-CatchUp {
   $sid = Stdin-Sid; if (-not $sid) { $sid = 'default' }
   $mf = Marker-File $r $sid
   if ($once -and (Test-Path $mf) -and ((Marker-Get $mf 'caughtup') -eq '1')) { exit 0 }
-  Marker-Set $mf 'startCommit' (Git-Sha $r)
-  Marker-Set $mf 'startStatus' (Git-DirtySum $r)
-  Marker-Set $mf 'startEpoch' (Now-Epoch)
-  Marker-Set $mf 'nudged' '0'
-  Marker-Set $mf 'handoff' '0'
-  Marker-Set $mf 'caughtup' '1'
+  # Compute all values first, then write the whole marker in ONE atomic operation.
+  $sc = Git-Sha $r; $ss = Git-DirtySum $r; $se = Now-Epoch
+  Write-Lines-Atomic $mf @("startCommit=$sc", "startStatus=$ss", "startEpoch=$se", "nudged=0", "handoff=0", "caughtup=1")
   Write-Output (Emit-AdditionalContext $event (Build-CatchupBody $r))
 }
 
@@ -306,7 +311,7 @@ function Walk-Node {
       $k = $p.Name; $v = $p.Value
       if ($k -eq 'gitBranch' -and $v -is [string] -and $v) { $script:branch = $v }
       if (($k -eq 'timestamp' -or $k -eq 'time') -and $v -is [string]) { if (-not $script:tfirst) { $script:tfirst = $v }; $script:tlast = $v }
-      if (($k -eq 'file_path' -or $k -eq 'notebook_path' -or $k -eq 'path' -or $k -eq 'filename') -and $v -is [string] -and ($v -match '[\\/]')) { [void]$script:files.Add($v) }
+      if (($k -eq 'file_path' -or $k -eq 'notebook_path') -and $v -is [string] -and ($v -match '[\\/]')) { [void]$script:files.Add($v) }
     }
     $role = $o.role; if (-not $role) { $role = $o.type }
     if ($role -in @('user', 'UserMessage', 'human')) {

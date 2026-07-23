@@ -68,13 +68,16 @@ manifest_get() {
 marker_dir()  { printf '%s\n' "$ROOT/.aicontext/.session"; }
 marker_file() { printf '%s\n' "$(marker_dir)/${1:-default}.env"; }
 marker_get()  { [ -f "$2" ] && sed -nE "s/^$1=//p" "$2" | head -1; }
+# Atomic single-field update: rewrite to a temp file, then rename. Never leaves a truncated marker.
 marker_set()  { # key value file
-  local k="$1" v="$2" f="$3"
-  mkdir -p "$(dirname "$f")"
+  local k="$1" v="$2" f="$3" tmp
+  mkdir -p "$(dirname "$f")"; tmp="$f.tmp.$$"
   if [ -f "$f" ] && grep -q "^$k=" "$f"; then
-    sed -i.bak "s|^$k=.*|$k=$v|" "$f" && rm -f "$f.bak"
+    sed "s|^$k=.*|$k=$v|" "$f" > "$tmp" && mv -f "$tmp" "$f"
+  elif [ -f "$f" ]; then
+    { cat "$f"; printf '%s=%s\n' "$k" "$v"; } > "$tmp" && mv -f "$tmp" "$f"
   else
-    printf '%s=%s\n' "$k" "$v" >> "$f"
+    printf '%s=%s\n' "$k" "$v" > "$tmp" && mv -f "$tmp" "$f"
   fi
 }
 
@@ -161,12 +164,10 @@ cmd_catch_up() {
   local sid mf; sid="$(stdin_sid)"; [ -z "$sid" ] && sid="default"; mf="$(marker_file "$sid")"
   # per-turn hosts (Windsurf) call this every prompt: only emit the first time per session.
   if [ "$once" = "1" ] && [ -f "$mf" ] && [ "$(marker_get caughtup "$mf")" = "1" ]; then exit 0; fi
-  marker_set startCommit "$(git_sha)"       "$mf"
-  marker_set startStatus "$(git_dirty_sum)" "$mf"
-  marker_set startEpoch  "$(date +%s)"      "$mf"
-  marker_set nudged      0                  "$mf"
-  marker_set handoff     0                  "$mf"
-  marker_set caughtup    1                  "$mf"
+  # Compute all values first, then write the whole marker in ONE atomic operation (temp + rename).
+  local _sc _ss _se tmp; _sc="$(git_sha)"; _ss="$(git_dirty_sum)"; _se="$(date +%s)"
+  mkdir -p "$(dirname "$mf")"; tmp="$mf.tmp.$$"
+  { printf 'startCommit=%s\nstartStatus=%s\nstartEpoch=%s\nnudged=0\nhandoff=0\ncaughtup=1\n' "$_sc" "$_ss" "$_se"; } > "$tmp" && mv -f "$tmp" "$mf"
   local body; body="$(build_catchup_body)"
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' \
     "$event" "$(printf '%s' "$body" | json_escape)"
@@ -358,7 +359,7 @@ else:
     src=frm; path=cands[src]
 # generic, format-tolerant extractor (works across Claude/Codex/Gemini schemas)
 prompts=[]; files=set(); branch=""; first=None; last=None
-FILEK={"file_path","notebook_path","path","filename"}
+FILEK={"file_path","notebook_path"}
 def text_of(c):
     if isinstance(c,str): return c
     if isinstance(c,dict): return c.get("text") or text_of(c.get("content")) or text_of(c.get("parts"))
