@@ -1,6 +1,17 @@
-# 🔁 Continuum
+<p align="center">
+  <img src="docs/logo.png" alt="Continuum" width="190" />
+</p>
 
-**Cross-agent session continuity for AI coding agents.**
+<h1 align="center">Continuum</h1>
+
+<p align="center"><b>Cross-agent session continuity for AI coding agents.</b></p>
+
+<p align="center">
+  <a href="https://anasnafees1802.github.io/continuum/">Website</a> ·
+  <a href="#install">Install</a> ·
+  <a href="https://github.com/AnasNafees1802/continuum/releases/tag/v2.0.0">v2.0.0</a> ·
+  <a href="LICENSE">MIT</a>
+</p>
 
 Switch from Codex to Claude to Antigravity — or come back tomorrow after hitting a usage limit —
 and your agent already knows *what you're building, where you are, and what's next.* No re-explaining.
