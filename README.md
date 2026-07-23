@@ -155,7 +155,8 @@ that has them and uses a **shared helper CLI** for the bookkeeping:
 - **Handoff before context loss** — a pre-compaction hook fires right as the context window is about
   to compact and prompts the handoff *then*, while the detail still exists.
 - **A gentle safety net, not a nag** — a stop hook reminds you *once per session* if you changed
-  files but never saved. Never twice.
+  files but never saved, or if you *committed* code but never recorded the decision behind it. Once,
+  never twice. (Keeps `TASKS.md`/`DECISIONS.md` honest too — not just `STATE.md`.)
 - **Reconstruction for hard kills** — if a session ends with no handoff (limit/crash), the next
   session detects the gap and `continuum import --from auto` rebuilds a draft handoff from the last
   agent's own transcript **plus** a git-based view. The one moment a hook *can't* capture is
@@ -172,19 +173,25 @@ actual prose**; that judgment isn't something to automate away.
 
 ### What's automated, per agent
 
-| Agent | Catch-up (start) | Handoff prompt | Stop nudge | Native transcript recon |
-|-------|:---:|:---:|:---:|:---:|
-| Claude Code | ✅ `SessionStart` | ✅ `PreCompact` | ✅ `Stop` | ✅ |
-| Codex | ✅ `SessionStart` | ✅ `PreCompact` | ✅ `Stop` | ✅ (matched by cwd) |
-| Gemini CLI | ✅ `SessionStart` | ✅ `PreCompress` | — | ✅ |
-| Cursor | ✅ `sessionStart` | ✅ `preCompact` | ✅ `stop` | git-based |
-| Windsurf | ✅ (first per-turn hook) | — | — | git-based |
+| Agent | Catch-up (start) | Handoff prompt | Stop nudge | Transcript recon | Status |
+|-------|:---:|:---:|:---:|:---:|:---:|
+| Claude Code | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native | ✅ verified |
+| Codex | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native (cwd-matched) | ✅ verified |
+| Antigravity | ✅ honor-protocol¹ | — | — | git-based² | ✅ verified |
+| Gemini CLI | ✅ `SessionStart` hook | ✅ `PreCompress` | — | ✅ native | 🧪 beta |
+| Cursor | ✅ `sessionStart` hook | ✅ `preCompact` | ✅ `stop` | git-based | 🧪 beta |
+| Windsurf | ✅ first per-turn hook | — | — | git-based | 🧪 untested |
+
+<sub>**Status** = has it been confirmed on a real session? ✅ verified · 🧪 not yet. ¹ Antigravity has no
+hook system, so catch-up rides the honor-protocol (it reads `AGENTS.md`/`GEMINI.md` and can run the
+`continuum` CLI itself). ² Its transcripts are binary, so reconstruction uses the git floor.</sub>
 
 > **Universal floor:** even where native hooks or transcript parsing aren't available, the
 > **git-based reconstruction** (`--from git`, always included in `auto`) rebuilds "what changed" from
 > `git log`/`git diff`, and the honor-protocol in each agent's instruction file (`AGENTS.md` /
 > `GEMINI.md` / `CLAUDE.md` / rules) still drives read-at-start, save-before-stop. Continuity never
-> fully fails, on any tool.
+> fully fails, on any tool. Verified end-to-end on real Claude Code, Codex, and Antigravity sessions;
+> Gemini/Cursor rely on the same mechanisms and the floor, pending a real-session pass.
 
 ## How it works in practice
 
