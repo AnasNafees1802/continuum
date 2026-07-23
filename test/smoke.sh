@@ -55,6 +55,14 @@ G2="$(printf '{"session_id":"smoke1","stop_hook_active":false}' | bash "$CONT" g
 if echo "$G1" | grep -q '"decision":"block"' && [ -z "$G2" ]
 then ok "guard: nudges once, silent thereafter"; else bad "guard once ($G1 / $G2)"; fi
 
+# 4b. guard also nudges when you committed code but never logged a decision
+printf '{"session_id":"smoke2"}' | bash "$CONT" catch-up >/dev/null 2>&1
+python3 -c "import os,time;t=time.time();os.utime('.aicontext/STATE.md',(t+3600,)*2);os.utime('.aicontext/DECISIONS.md',(t-3600,)*2)"
+printf 'feat\n' > feat_b.txt; git add -A >/dev/null 2>&1; git commit -qm "smoke feat" >/dev/null 2>&1
+GD="$(printf '{"session_id":"smoke2","stop_hook_active":false}' | bash "$CONT" guard)"
+if echo "$GD" | grep -q 'DECISIONS.md'
+then ok "guard: nudges when commits made without a logged decision"; else bad "guard decision nudge ($GD)"; fi
+
 # 5. compact -> rotate a >20-entry journal down to 20 + archive the rest
 { echo "# Session Journal"; echo; for i in $(seq 25 -1 1); do printf '## 2026-01-%02d 10:00 - a\nentry %d\n\n' "$i" "$i"; done; } > "$T/.aicontext/JOURNAL.md"
 bash "$CONT" compact >/dev/null 2>&1

@@ -146,6 +146,7 @@ build_catchup_body() {
     [ -n "$drift" ] && echo "VERIFY: $drift"
     [ -n "$gapf" ] && echo "GAP: a previous session may have ended without a handoff (usage-limit/crash)."
     echo "Before briefing: reconcile STATE.md against 'git log'/'git status'; if a prior session went unsaved, run 'continuum import --from auto' to reconstruct, then fold it in."
+    [ -n "$drift" ] && echo "HYGIENE: commits landed since the last save — confirm DECISIONS.md logged any design choices and TASKS.md reflects progress (keep them live, not just STATE.md)."
   fi
   echo
   echo "----- STATE.md -----"
@@ -191,14 +192,23 @@ cmd_guard() {
   start_commit="$(marker_get startCommit "$mf")"
   start_status="$(marker_get startStatus "$mf")"
   start_epoch="$(marker_get startEpoch "$mf")"; [ -z "$start_epoch" ] && start_epoch=0
-  [ "$(git_sha)" != "$start_commit" ] && work=1
+  local committed=0
+  [ "$(git_sha)" != "$start_commit" ] && { work=1; committed=1; }
   [ "$(git_dirty_sum)" != "$start_status" ] && work=1
   [ "$work" = "0" ] && exit 0
-  local state_mtime; state_mtime="$(file_mtime "$ROOT/.aicontext/STATE.md")"
-  if [ "$state_mtime" -gt "$start_epoch" ] 2>/dev/null; then exit 0; fi
+  local state_mtime dec_mtime reason=""
+  state_mtime="$(file_mtime "$ROOT/.aicontext/STATE.md")"
+  dec_mtime="$(file_mtime "$ROOT/.aicontext/DECISIONS.md")"
+  if ! { [ "$state_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
+    # did real work but never updated STATE -> no handoff saved
+    reason="you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'."
+  elif [ "$committed" = "1" ] && ! { [ "$dec_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
+    # saved/updated STATE, and committed code, but never touched the decision log
+    reason="you committed changes this session but DECISIONS.md wasn't updated. If any of it was a design/architectural choice, log it (decision + why) so the next agent doesn't have to reverse-engineer it."
+  fi
+  [ -z "$reason" ] && exit 0
   marker_set nudged 1 "$mf"
-  printf '{"decision":"block","reason":"%s"}\n' \
-    "Continuum: you changed files this session but haven't saved a handoff. Take ~20 seconds now: update the live sections of .aicontext/STATE.md, append a 'Left off at' entry to .aicontext/JOURNAL.md, then run 'continuum save'. If there is genuinely nothing worth saving, say so and stop - this reminder won't repeat."
+  printf '{"decision":"block","reason":"Continuum: %s If there is genuinely nothing to record, say so and stop - this reminder will not repeat."}\n' "$reason"
 }
 
 cmd_save() {

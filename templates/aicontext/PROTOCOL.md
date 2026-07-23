@@ -45,7 +45,9 @@ The three moments are backed by deterministic hooks so continuity never depends 
 (no session hook) runs catch-up on its first per-turn hook:
 - **session start** injects the catch-up (STATE + top journal + drift/gap notes) automatically.
 - **pre-compaction** prompts a handoff right before context is compacted — the "running low" moment.
-- **stop** gives *one* gentle reminder per session if you changed files but never saved (agents that support it).
+- **stop** gives *one* gentle reminder per session if you changed files but never saved — or if you
+  *committed* code but never updated `DECISIONS.md` (so design choices don't go unrecorded). Catch-up
+  likewise flags a lagging decision log. This keeps `TASKS.md`/`DECISIONS.md` honest, not just `STATE.md`.
 
 A helper CLI (installed once to `~/.continuum/bin/continuum.{ps1,sh}`, or `.claude/skills/continuum/bin/`
 per-project) does the mechanics — the model still writes the prose:

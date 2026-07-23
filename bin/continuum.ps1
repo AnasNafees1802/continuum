@@ -177,6 +177,7 @@ function Build-CatchupBody {
     if ($drift) { [void]$sb.AppendLine("VERIFY: $drift") }
     if ($gap) { [void]$sb.AppendLine('GAP: a previous session may have ended without a handoff (usage-limit/crash).') }
     [void]$sb.AppendLine("Before briefing: reconcile STATE.md against 'git log'/'git status'; if a prior session went unsaved, run 'continuum import --from auto' to reconstruct, then fold it in.")
+    if ($drift) { [void]$sb.AppendLine("HYGIENE: commits landed since the last save - confirm DECISIONS.md logged any design choices and TASKS.md reflects progress (keep them live, not just STATE.md).") }
   }
   [void]$sb.AppendLine('')
   [void]$sb.AppendLine('----- STATE.md -----')
@@ -222,14 +223,22 @@ function Cmd-Guard {
   if ((Marker-Get $mf 'nudged') -eq '1') { exit 0 }
   $startCommit = Marker-Get $mf 'startCommit'; $startStatus = Marker-Get $mf 'startStatus'
   $startEpoch = [int64](Marker-Get $mf 'startEpoch'); if (-not $startEpoch) { $startEpoch = 0 }
-  $work = $false
-  if ((Git-Sha $r) -ne $startCommit) { $work = $true }
+  $work = $false; $committed = $false
+  if ((Git-Sha $r) -ne $startCommit) { $work = $true; $committed = $true }
   if ((Git-DirtySum $r) -ne $startStatus) { $work = $true }
   if (-not $work) { exit 0 }
-  if ((File-MtimeEpoch (Join-Path $r '.aicontext\STATE.md')) -gt $startEpoch) { exit 0 }
+  $stateM = File-MtimeEpoch (Join-Path $r '.aicontext\STATE.md')
+  $decM = File-MtimeEpoch (Join-Path $r '.aicontext\DECISIONS.md')
+  $reason = $null
+  if (-not ($stateM -gt $startEpoch)) {
+    $reason = "you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'."
+  }
+  elseif ($committed -and -not ($decM -gt $startEpoch)) {
+    $reason = "you committed changes this session but DECISIONS.md wasn't updated. If any of it was a design/architectural choice, log it (decision + why) so the next agent doesn't have to reverse-engineer it."
+  }
+  if (-not $reason) { exit 0 }
   Marker-Set $mf 'nudged' '1'
-  $reason = "Continuum: you changed files this session but haven't saved a handoff. Take ~20 seconds now: update the live sections of .aicontext/STATE.md, append a 'Left off at' entry to .aicontext/JOURNAL.md, then run 'continuum save'. If there is genuinely nothing worth saving, say so and stop - this reminder won't repeat."
-  Write-Output (@{ decision = 'block'; reason = $reason } | ConvertTo-Json -Compress)
+  Write-Output (@{ decision = 'block'; reason = ("Continuum: " + $reason + " If there is genuinely nothing to record, say so and stop - this reminder will not repeat.") } | ConvertTo-Json -Compress)
 }
 
 function Cmd-Save {

@@ -20,6 +20,10 @@ crash killing a session) is exactly when a voluntary handoff can't run.
   across a tool switch (Codex ⇄ Claude) and even on agents whose logs can't be parsed.
 - **Drift detection** — session catch-up compares the saved git commit to `HEAD` and warns before
   briefing from a stale ledger.
+- **Ledger-hygiene enforcement** — the stop-hook now also nudges (once/session) when you *committed*
+  code but never updated `DECISIONS.md`, and catch-up flags a lagging decision log. This extends
+  enforcement beyond `STATE.md`/save to the parts that were previously honor-only (`TASKS.md`,
+  `DECISIONS.md`) — found because the author's own dogfooding let those two go stale.
 - **Journal rotation** — `compact` archives old `JOURNAL.md` entries into `.aicontext/archive/`.
 - Shared helper installed once to `~/.continuum/bin`; per-agent hook formats merged idempotently.
 - Smoke-test suite (`test/smoke.sh`) and this changelog.
