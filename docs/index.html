@@ -8,7 +8,7 @@
 <meta property="og:title" content="Continuum — one shared memory for every AI coding agent" />
 <meta property="og:description" content="Cross-agent session continuity. Read it when you start. Update it before you stop. Context survives the switch." />
 <meta property="og:type" content="website" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%81%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/png" href="favicon.png" />
 <style>
   :root{
     --bg:#08080c; --bg2:#0c0d13; --surface:rgba(255,255,255,.03); --surface-2:rgba(255,255,255,.05);
@@ -51,7 +51,8 @@
   header.scrolled{border-color:var(--border)}
   nav{display:flex;align-items:center;justify-content:space-between;height:64px}
   .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
-  .logo .mark{font-size:1.25rem;filter:drop-shadow(0 0 10px rgba(139,123,255,.6))}
+  .logo .mark{height:30px;width:auto;filter:drop-shadow(0 0 12px rgba(139,123,255,.5))}
+  .hero-logo{width:104px;height:104px;display:block;margin:0 auto 22px;filter:drop-shadow(0 10px 34px rgba(139,123,255,.45))}
   .nav-links{display:flex;align-items:center;gap:30px}
   .nav-links a{color:var(--muted);font-size:.9rem;font-weight:500;transition:color .2s}
   .nav-links a:hover{color:var(--text)}
@@ -174,7 +175,7 @@
 
 <header id="hdr">
   <div class="wrap"><nav>
-    <a class="logo" href="#top"><span class="mark">🔁</span> Continuum</a>
+    <a class="logo" href="#top"><img class="mark" src="logo.png" alt="Continuum logo" /> Continuum</a>
     <div class="nav-links">
       <a class="hide-sm" href="#how">How it works</a>
       <a class="hide-sm" href="#agents">Agents</a>
@@ -187,6 +188,7 @@
 
 <main id="top">
   <section class="hero wrap">
+    <img class="hero-logo reveal in" src="logo.png" alt="Continuum" />
     <span class="badge"><span class="dot"></span> <b>v2.0.0</b> shipped · MIT · works with 6 agents</span>
     <h1>One shared memory for<br><span class="grad-text">every AI coding agent.</span></h1>
     <p class="lead">Switch from Codex to Claude to Antigravity — or come back tomorrow after a usage limit — and your agent already knows <span style="color:var(--text)">what you're building, where you are, and what's next.</span> No re-explaining.</p>
@@ -354,7 +356,7 @@
 </main>
 
 <footer><div class="wrap foot">
-  <div>🔁 <b>Continuum</b> · <span style="color:var(--faint)">MIT © <span id="yr"></span> Anas Nafees</span></div>
+  <div><img src="logo.png" alt="" style="height:18px;vertical-align:-4px;margin-right:6px" /> <b>Continuum</b> · <span style="color:var(--faint)">MIT © <span id="yr"></span> Anas Nafees</span></div>
   <div class="foot-links">
     <a href="https://github.com/AnasNafees1802/continuum" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/AnasNafees1802/continuum/releases/tag/v2.0.0" target="_blank" rel="noopener">v2.0.0</a>

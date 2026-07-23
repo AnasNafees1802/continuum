@@ -19,3 +19,6 @@ Thumbs.db
 /.windsurfrules
 /CLAUDE.md
 /AGENTS.md
+
+# raw logo source (site uses the optimized docs/logo.png + favicon.png)
+/docs/continuum_logo.png
