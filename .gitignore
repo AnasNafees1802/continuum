@@ -8,3 +8,14 @@ Thumbs.db
 
 # don't commit a test ledger if you run the installer inside this clone
 .aicontext/
+
+# Continuum dogfooding: running the installer inside this repo drops these
+# machine-local adapter/config/skill artifacts at the root. They are byproducts,
+# not product source (the product templates live in adapters/, skill/, templates/, bin/).
+/.aicontext/
+/.claude/
+/.codex/
+/.agents/
+/.windsurfrules
+/CLAUDE.md
+/AGENTS.md
