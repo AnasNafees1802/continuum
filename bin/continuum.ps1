@@ -57,13 +57,24 @@ function Marker-Dir { param($r) Join-Path $r '.aicontext\.session' }
 function Marker-File { param($r, $sid) if (-not $sid) { $sid = 'default' }; Join-Path (Marker-Dir $r) ($sid + '.env') }
 function Marker-Get { param($file, $key) if (-not (Test-Path $file)) { return $null }; foreach ($line in Get-Content $file) { if ($line -match "^$key=(.*)$") { return $Matches[1] } }; return $null }
 # Atomic write: build content fully, write a temp file, then rename over the target.
-# A truncated/empty marker can never appear even if the hook process is killed mid-run.
+# A truncated/empty file can never appear even if the process is killed mid-run.
 function Write-Lines-Atomic {
   param($file, $lines)
   $dir = Split-Path $file -Parent
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
   $tmp = "$file.tmp.$PID"
   Set-Content -Path $tmp -Value $lines -Encoding ascii
+  Move-Item -Path $tmp -Destination $file -Force
+}
+# Atomic UTF-8 write WITHOUT BOM. PS 5.1's Set-Content -Encoding utf8 adds a BOM, which breaks
+# Python/jq readers — a cross-tool hazard for JSON the other agents must parse.
+function Write-Text-Atomic {
+  param($file, $text)
+  $dir = Split-Path $file -Parent
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  $enc = New-Object System.Text.UTF8Encoding($false)
+  $tmp = "$file.tmp.$PID"
+  [System.IO.File]::WriteAllText($tmp, $text, $enc)
   Move-Item -Path $tmp -Destination $file -Force
 }
 function Marker-Set {
@@ -240,7 +251,7 @@ function Cmd-Save {
   $seen = @(); if ($c.PSObject.Properties.Name -contains 'agentsSeen' -and $c.agentsSeen) { $seen = @($c.agentsSeen) }
   if ($seen -notcontains $agent) { $seen += $agent }
   Set-Prop $c 'agentsSeen' $seen
-  ($m | ConvertTo-Json -Depth 12) | Set-Content -Path $f -Encoding utf8
+  Write-Text-Atomic $f ($m | ConvertTo-Json -Depth 12)
   if ($sid) { Marker-Set (Marker-File $r $sid) 'handoff' '1' }
   $sha = Git-Sha $r; $short = if ($sha) { $sha.Substring(0, [Math]::Min(7, $sha.Length)) } else { '' }
   Write-Output "continuum: handoff saved (agent=$agent, commit=$short, at $(Now-Human))."
@@ -262,8 +273,10 @@ function Cmd-Compact {
   $archive = Join-Path $r '.aicontext\archive'
   if (-not (Test-Path $archive)) { New-Item -ItemType Directory -Force -Path $archive | Out-Null }
   $af = Join-Path $archive ("JOURNAL-" + (Get-Date -Format yyyy) + ".md")
-  Add-Content -Path $af -Value $archLines -Encoding utf8
-  Set-Content -Path $j -Value $keepLines -Encoding utf8
+  $enc = New-Object System.Text.UTF8Encoding($false)
+  $prev = if (Test-Path $af) { [System.IO.File]::ReadAllText($af, $enc) } else { '' }
+  [System.IO.File]::WriteAllText($af, ($prev + ($archLines -join "`n") + "`n"), $enc)
+  Write-Text-Atomic $j (($keepLines -join "`n") + "`n")
   if (-not $quiet) { Write-Output "continuum: rotated old JOURNAL entries into archive/JOURNAL-$(Get-Date -Format yyyy).md (kept newest $keep)." }
 }
 

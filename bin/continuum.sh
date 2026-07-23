@@ -220,14 +220,18 @@ cmd_save() {
   elif has_py3; then
     CONT_U="$uh" CONT_H="$ui" CONT_A="$agent" CONT_C="$sha" CONT_S="${sid:-}" python3 - "$f" <<'PY'
 import json,os,sys
-p=sys.argv[1]; d=json.load(open(p)); c=d.setdefault("continuum",{})
+p=sys.argv[1]
+d=json.load(open(p,encoding="utf-8-sig"))          # tolerate a BOM (PS may have written one)
+c=d.setdefault("continuum",{})
 c["lastUpdated"]=os.environ["CONT_U"]; c["handoffAt"]=os.environ["CONT_H"]
 c["lastAgent"]=os.environ["CONT_A"]; c["lastCommit"]=os.environ["CONT_C"]
 c["lastSessionId"]=os.environ["CONT_S"]; c["sessionCount"]=int(c.get("sessionCount",0))+1
 seen=c.get("agentsSeen") or []
 if os.environ["CONT_A"] not in seen: seen.append(os.environ["CONT_A"])
 c["agentsSeen"]=seen
-json.dump(d,open(p,"w"),indent=2); open(p,"a").write("\n")
+tmp=p+".tmp."+str(os.getpid())                      # atomic write (no BOM)
+with open(tmp,"w",encoding="utf-8") as fh: json.dump(d,fh,indent=2); fh.write("\n")
+os.replace(tmp,p)
 PY
   else
     sed -i.bak -E \
