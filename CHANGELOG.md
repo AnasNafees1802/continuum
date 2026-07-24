@@ -3,6 +3,15 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] — 2026-07-24
+
+### Fixed
+- **False "you didn't save" nag.** The Stop-hook guard nagged even after a real `continuum save`,
+  because a manually-run `save` has no `session_id` (that only arrives via a hook's stdin) and so
+  couldn't stamp the current session's marker. The guard now also treats the session as handed-off
+  when `manifest.handoffAt` is newer than the session start, independent of the per-session marker.
+  Found by dogfooding (the guard nagged its own author after a completed save).
+
 ## [2.0.0] — 2026-07-23
 
 Turns Continuum from an honor-protocol ("read `.aicontext/` at start, update before you stop")

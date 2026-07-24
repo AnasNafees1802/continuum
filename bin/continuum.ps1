@@ -227,6 +227,10 @@ function Cmd-Guard {
   if ((Git-Sha $r) -ne $startCommit) { $work = $true; $committed = $true }
   if ((Git-DirtySum $r) -ne $startStatus) { $work = $true }
   if (-not $work) { exit 0 }
+  # Already handed off this session? A `continuum save` after session start counts, even if it
+  # couldn't stamp this session's marker (a manual save has no session_id from stdin).
+  $ho = Manifest-Get $r 'handoffAt'
+  if ($ho) { try { $hoE = [int64]([datetimeoffset]::Parse($ho)).ToUnixTimeSeconds() } catch { $hoE = 0 }; if ($hoE -ge $startEpoch) { exit 0 } }
   $stateM = File-MtimeEpoch (Join-Path $r '.aicontext\STATE.md')
   $decM = File-MtimeEpoch (Join-Path $r '.aicontext\DECISIONS.md')
   $reason = $null

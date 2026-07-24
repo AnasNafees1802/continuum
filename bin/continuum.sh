@@ -196,6 +196,13 @@ cmd_guard() {
   [ "$(git_sha)" != "$start_commit" ] && { work=1; committed=1; }
   [ "$(git_dirty_sum)" != "$start_status" ] && work=1
   [ "$work" = "0" ] && exit 0
+  # Already handed off this session? A `continuum save` after session start counts,
+  # even if it couldn't stamp this session's marker (manual save has no session_id).
+  local ho ho_e; ho="$(manifest_get handoffAt)"
+  if [ -n "$ho" ]; then
+    ho_e="$(date -d "$ho" +%s 2>/dev/null || echo 0)"
+    [ "$ho_e" -ge "$start_epoch" ] 2>/dev/null && exit 0
+  fi
   local state_mtime dec_mtime reason=""
   state_mtime="$(file_mtime "$ROOT/.aicontext/STATE.md")"
   dec_mtime="$(file_mtime "$ROOT/.aicontext/DECISIONS.md")"

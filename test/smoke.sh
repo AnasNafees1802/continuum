@@ -63,6 +63,15 @@ GD="$(printf '{"session_id":"smoke2","stop_hook_active":false}' | bash "$CONT" g
 if echo "$GD" | grep -q 'DECISIONS.md'
 then ok "guard: nudges when commits made without a logged decision"; else bad "guard decision nudge ($GD)"; fi
 
+# 4c. guard must NOT false-nag after a real save, even if this session's marker wasn't stamped
+printf '{"session_id":"smoke3"}' | bash "$CONT" catch-up >/dev/null 2>&1
+printf 'more\n' > feat_c.txt; git add -A >/dev/null 2>&1; git commit -qm "smoke c" >/dev/null 2>&1
+bash "$CONT" save --agent smoke >/dev/null 2>&1
+sed -i 's/^handoff=1/handoff=0/' .aicontext/.session/smoke3.env 2>/dev/null   # simulate a manual save that never stamped the marker
+GC="$(printf '{"session_id":"smoke3","stop_hook_active":false}' | bash "$CONT" guard)"
+if [ -z "$GC" ]
+then ok "guard: silent after a save even if the marker wasn't stamped (no false nag)"; else bad "guard false-nag after save ($GC)"; fi
+
 # 5. compact -> rotate a >20-entry journal down to 20 + archive the rest
 { echo "# Session Journal"; echo; for i in $(seq 25 -1 1); do printf '## 2026-01-%02d 10:00 - a\nentry %d\n\n' "$i" "$i"; done; } > "$T/.aicontext/JOURNAL.md"
 bash "$CONT" compact >/dev/null 2>&1
