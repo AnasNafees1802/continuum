@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Continuum — one shared memory for every AI coding agent</title>
-<meta name="description" content="Switch from Codex to Claude to Antigravity — or come back after a usage limit — and your agent already knows what you're building, where you are, and what's next. No re-explaining." />
-<meta property="og:title" content="Continuum — one shared memory for every AI coding agent" />
+<title>Continuum, one shared memory for every AI coding agent</title>
+<meta name="description" content="Switch from Codex to Claude to Antigravity, or come back after a usage limit, and your agent already knows what you're building, where you are, and what's next. No re-explaining." />
+<meta property="og:title" content="Continuum, one shared memory for every AI coding agent" />
 <meta property="og:description" content="Cross-agent session continuity. Read it when you start. Update it before you stop. Context survives the switch." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/png" href="favicon.png" />
@@ -86,6 +86,16 @@
   .copy:hover{color:var(--text);border-color:var(--border-2)}
   .copy.done{color:var(--ok);border-color:var(--ok)}
   .install-note{font-size:.78rem;color:var(--faint);margin-top:14px;font-family:var(--mono)}
+  /* install options */
+  .opt{margin-bottom:30px}
+  .opt-head{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+  .opt-head .num{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;font-family:var(--mono);font-size:.82rem;background:var(--grad);color:#0a0a12;font-weight:800;flex-shrink:0}
+  .opt-head h3{font-size:1.08rem}
+  .opt-head .easiest{font-family:var(--mono);font-size:.66rem;color:var(--a2);border:1px solid rgba(49,208,255,.3);background:rgba(49,208,255,.08);padding:3px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.12em}
+  .prompt-box{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .prompt-box pre{margin:0;padding:18px 84px 18px 20px;font-family:var(--mono);font-size:.82rem;line-height:1.7;color:var(--text);white-space:pre-wrap;overflow-x:auto}
+  .prompt-box .copy{position:absolute;top:12px;right:12px}
+  .opt-note{font-size:.82rem;color:var(--faint);margin-top:11px}
 
   /* agent pills */
   .agents-strip{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:52px}
@@ -191,7 +201,7 @@
     <img class="hero-logo reveal in" src="logo.png" alt="Continuum" />
     <span class="badge"><span class="dot"></span> <b>v2.0.0</b> shipped · MIT · works with 6 agents</span>
     <h1>One shared memory for<br><span class="grad-text">every AI coding agent.</span></h1>
-    <p class="lead">Switch from Codex to Claude to Antigravity — or come back tomorrow after a usage limit — and your agent already knows <span style="color:var(--text)">what you're building, where you are, and what's next.</span> No re-explaining.</p>
+    <p class="lead">Switch from Codex to Claude to Antigravity, or come back tomorrow after a usage limit, and your agent already knows <span style="color:var(--text)">what you're building, where you are, and what's next.</span> No re-explaining.</p>
     <div class="hero-cta">
       <a class="btn btn-primary btn-lg" href="#install">Get started</a>
       <a class="btn btn-ghost btn-lg" href="https://github.com/AnasNafees1802/continuum" target="_blank" rel="noopener">View on GitHub →</a>
@@ -229,12 +239,12 @@
     <div class="sec-head">
       <span class="eyebrow">The problem</span>
       <h2>Context is trapped in silos.</h2>
-      <p>Every agent keeps its own private history — and none of them share.</p>
+      <p>Every agent keeps its own private history, and none of them share.</p>
     </div>
     <div class="split">
       <div class="card bad">
         <h3>😤 Without Continuum</h3>
-        <p>You ship a couple of features, then the <span class="em">daily limit hits</span> and your agent stops. You switch to another one — but it knows <span class="em">nothing</span>. You burn time and tokens re-explaining the project, and you lose the thread of <span class="em">why</span> things were done a certain way.</p>
+        <p>You ship a couple of features, then the <span class="em">daily limit hits</span> and your agent stops. You switch to another one, but it knows <span class="em">nothing</span>. You burn time and tokens re-explaining the project, and you lose the thread of <span class="em">why</span> things were done a certain way.</p>
       </div>
       <div class="card good">
         <h3>🔁 With Continuum</h3>
@@ -248,12 +258,12 @@
     <div class="sec-head">
       <span class="eyebrow">How it works</span>
       <h2>Three moments, on autopilot.</h2>
-      <p>Native hooks fire them for you — so continuity never depends on anyone remembering.</p>
+      <p>Native hooks fire them for you, so continuity never depends on anyone remembering.</p>
     </div>
     <div class="steps">
       <div class="step"><div class="ic">📍</div><div class="n">01 · SESSION START</div><h3>Catch up</h3><p>A session-start hook injects <code style="font-family:var(--mono);color:var(--a2)">STATE.md</code> into context and verifies it against <code style="font-family:var(--mono)">git</code>. Your agent briefs you before you type a word.</p></div>
-      <div class="step"><div class="ic">✍️</div><div class="n">02 · DURING WORK</div><h3>Keep it live</h3><p>Tasks and decisions stay current as you go. A pre-compaction hook prompts a handoff right as the context window fills — while the detail still exists.</p></div>
-      <div class="step"><div class="ic">💾</div><div class="n">03 · HANDOFF</div><h3>Save the thread</h3><p>One command stamps the ledger + git commit. And if a crash beats you to it, <code style="font-family:var(--mono);color:var(--a2)">continuum import</code> reconstructs the session from the transcript — plus git.</p></div>
+      <div class="step"><div class="ic">✍️</div><div class="n">02 · DURING WORK</div><h3>Keep it live</h3><p>Tasks and decisions stay current as you go. A pre-compaction hook prompts a handoff right as the context window fills, while the detail still exists.</p></div>
+      <div class="step"><div class="ic">💾</div><div class="n">03 · HANDOFF</div><h3>Save the thread</h3><p>One command stamps the ledger + git commit. And if a crash beats you to it, <code style="font-family:var(--mono);color:var(--a2)">continuum import</code> reconstructs the session from the transcript, plus git.</p></div>
     </div>
   </div></section>
 
@@ -265,15 +275,15 @@
       <p>No context pasted. No project explained. It just knows.</p>
     </div>
     <div class="term">
-      <div class="term-bar"><span class="tc t1"></span><span class="tc t2"></span><span class="tc t3"></span><span class="tt">claude — ~/my-project</span></div>
+      <div class="term-bar"><span class="tc t1"></span><span class="tc t2"></span><span class="tc t3"></span><span class="tt">claude, ~/my-project</span></div>
 <div class="term-body"><span class="u">you ›</span> <span class="g">so where are we?</span>
-<span class="c">— reconciling ledger against git before briefing —</span>
+<span class="c">- reconciling ledger against git before briefing -</span>
 
 <span class="k">📍 Caught up from .aicontext/</span>
 <span class="g">• Building:</span> auth flow with token refresh
 <span class="g">• Status:</span>  login + session store done; refresh half-wired
 <span class="g">• Next:</span>    finish token refresh in <span class="u">src/auth/refresh.ts</span>
-<span class="w">⚠ verify:</span> 3 commits landed since the last save — reconciled, ledger is accurate.
+<span class="w">⚠ verify:</span> 3 commits landed since the last save, reconciled, ledger is accurate.
 
 <span class="g">Want me to pick up the token refresh where Codex left off?</span> <span class="cursor"></span></div>
     </div>
@@ -287,11 +297,11 @@
       <p>The naïve version breaks exactly when a usage limit kills the session. Continuum doesn't rely on remembering.</p>
     </div>
     <div class="features">
-      <div class="feat"><div class="ic">🪝</div><h3>Deterministic hooks</h3><p>Catch-up, handoff, and a one-per-session nudge fire automatically — on Claude Code, Codex, Gemini and Cursor. Not a polite request to the model.</p></div>
-      <div class="feat"><div class="ic">⏮️</div><h3>Reconstruction</h3><p>A limit-killed session is rebuilt from the last agent's own transcript <em>plus</em> a git view — even across a Codex ⇄ Claude switch.</p></div>
+      <div class="feat"><div class="ic">🪝</div><h3>Deterministic hooks</h3><p>Catch-up, handoff, and a one-per-session nudge fire automatically, on Claude Code, Codex, Gemini and Cursor. Not a polite request to the model.</p></div>
+      <div class="feat"><div class="ic">⏮️</div><h3>Reconstruction</h3><p>A limit-killed session is rebuilt from the last agent's own transcript <em>plus</em> a git view, even across a Codex ⇄ Claude switch.</p></div>
       <div class="feat"><div class="ic">🧭</div><h3>Never trusts a stale ledger</h3><p>Catch-up compares the saved commit to <code style="font-family:var(--mono)">HEAD</code> and flags drift, so an agent verifies against git instead of briefing you wrong.</p></div>
       <div class="feat"><div class="ic">🛟</div><h3>Universal git floor</h3><p>Even where hooks or transcripts aren't available, git-based reconstruction rebuilds "what changed." Continuity never fully fails, on any tool.</p></div>
-      <div class="feat"><div class="ic">🔒</div><h3>Atomic, portable writes</h3><p>Every ledger write is atomic and BOM-free — no truncated files, and JSON that every tool's parser can read. Cross-tool by construction.</p></div>
+      <div class="feat"><div class="ic">🔒</div><h3>Atomic, portable writes</h3><p>Every ledger write is atomic and BOM-free, no truncated files, and JSON that every tool's parser can read. Cross-tool by construction.</p></div>
       <div class="feat"><div class="ic">🍃</div><h3>Zero dependencies</h3><p>Plain PowerShell + bash and Markdown + JSON. No runtime, no service, no lock-in. Readable and editable by hand.</p></div>
     </div>
   </div></section>
@@ -301,7 +311,7 @@
     <div class="sec-head">
       <span class="eyebrow">Cross-agent support</span>
       <h2>What's automated, per agent.</h2>
-      <p>Honest status — verified means confirmed on a real session.</p>
+      <p>Honest status, verified means confirmed on a real session.</p>
     </div>
     <div class="matrix-wrap">
       <table>
@@ -309,38 +319,87 @@
         <tbody>
           <tr><td class="agent">Claude Code</td><td class="yes">✓ hook</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">native</td><td><span class="tag verified">● verified</span></td></tr>
           <tr><td class="agent">Codex</td><td class="yes">✓ hook</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">native</td><td><span class="tag verified">● verified</span></td></tr>
-          <tr><td class="agent">Antigravity</td><td class="yes">✓ protocol</td><td class="no">—</td><td class="no">—</td><td class="yes">git</td><td><span class="tag verified">● verified</span></td></tr>
-          <tr><td class="agent">Gemini CLI</td><td class="yes">✓ hook</td><td class="yes">✓</td><td class="no">—</td><td class="yes">native</td><td><span class="tag beta">● beta</span></td></tr>
+          <tr><td class="agent">Antigravity</td><td class="yes">✓ protocol</td><td class="no">-</td><td class="no">-</td><td class="yes">git</td><td><span class="tag verified">● verified</span></td></tr>
+          <tr><td class="agent">Gemini CLI</td><td class="yes">✓ hook</td><td class="yes">✓</td><td class="no">-</td><td class="yes">native</td><td><span class="tag beta">● beta</span></td></tr>
           <tr><td class="agent">Cursor</td><td class="yes">✓ hook</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">git</td><td><span class="tag beta">● beta</span></td></tr>
-          <tr><td class="agent">Windsurf</td><td class="yes">✓ per-turn</td><td class="no">—</td><td class="no">—</td><td class="yes">git</td><td><span class="tag beta">● beta</span></td></tr>
+          <tr><td class="agent">Windsurf</td><td class="yes">✓ per-turn</td><td class="no">-</td><td class="no">-</td><td class="yes">git</td><td><span class="tag beta">● beta</span></td></tr>
         </tbody>
       </table>
     </div>
     <p class="matrix-note">Every agent also participates via the honor-protocol (<code style="font-family:var(--mono)">AGENTS.md</code> / <code style="font-family:var(--mono)">GEMINI.md</code> / rules) and the universal git floor.</p>
   </div></section>
 
+  <!-- cost -->
+  <section class="block"><div class="wrap reveal">
+    <div class="sec-head">
+      <span class="eyebrow">Bonus</span>
+      <h2>It saves tokens, not just time.</h2>
+      <p>Real, structural savings. No fuzzy benchmarks, just less waste.</p>
+    </div>
+    <div class="features">
+      <div class="feat"><div class="ic">🗣️</div><h3>No re-explaining</h3><p>Catch-up injects a compact summary (a few hundred tokens) instead of you re-pasting the whole project into a fresh session every time.</p></div>
+      <div class="feat"><div class="ic">↩️</div><h3>No redone work</h3><p>A session killed by a usage limit gets reconstructed, not repeated. Redoing a whole session is the most expensive waste there is.</p></div>
+      <div class="feat"><div class="ic">✂️</div><h3>Bounded context</h3><p>Journal rotation keeps the ledger small, so the memory never bloats the very context window it exists to save.</p></div>
+    </div>
+  </div></section>
+
   <!-- install -->
   <section class="block" id="install"><div class="wrap reveal">
     <div class="sec-head">
       <span class="eyebrow">Install</span>
-      <h2>One line. Every agent. Done.</h2>
-      <p>Piping a script from the internet runs remote code — read <code style="font-family:var(--mono)">bootstrap.*</code> first if you like, or clone and run it yourself.</p>
+      <h2>Up and running in one step.</h2>
+      <p>Pick whichever suits you. All three do the same thing, and the memory ledger is created automatically the first time an agent opens a project.</p>
     </div>
-    <div class="install" style="margin-bottom:20px">
-      <div class="install-tabs">
-        <button class="active" data-tab2="ps">Windows · PowerShell</button>
-        <button data-tab2="sh">macOS · Linux</button>
+
+    <div class="opt">
+      <div class="opt-head"><span class="num">1</span><h3>Let your AI agent install it</h3><span class="easiest">Easiest</span></div>
+      <div class="prompt-box">
+<pre id="agent-prompt">Install "Continuum" globally on my machine. It's an open-source (MIT) tool that gives AI coding agents a shared memory so they keep context across sessions and tools: https://github.com/AnasNafees1802/continuum
+
+1. Detect my operating system.
+2. On Windows, run in PowerShell:
+   irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.ps1 | iex
+   On macOS or Linux, run in bash:
+   curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.sh | bash
+3. When it finishes, tell me which agents it set up and remind me to restart any open agent sessions.
+
+Do not change anything else.</pre>
+        <button class="copy" data-copy="agent-prompt">Copy</button>
       </div>
-      <div class="install-body" data-body2="ps">
-        <span class="prompt">PS&gt;</span><code id="cmd-ps2">irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.ps1 | iex</code>
-        <button class="copy" data-copy="cmd-ps2">Copy</button>
-      </div>
-      <div class="install-body" data-body2="sh" style="display:none">
-        <span class="prompt">$</span><code id="cmd-sh2">curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.sh | bash</code>
-        <button class="copy" data-copy="cmd-sh2">Copy</button>
+      <p class="opt-note">Paste this into Claude Code, Codex, Cursor, Gemini or any coding agent. It will ask you to approve the command. Approve it, and you are done.</p>
+    </div>
+
+    <div class="opt">
+      <div class="opt-head"><span class="num">2</span><h3>One line in your terminal</h3></div>
+      <div class="install">
+        <div class="install-tabs">
+          <button class="active" data-tab2="ps">Windows · PowerShell</button>
+          <button data-tab2="sh">macOS · Linux</button>
+        </div>
+        <div class="install-body" data-body2="ps">
+          <span class="prompt">PS&gt;</span><code id="cmd-ps2">irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.ps1 | iex</code>
+          <button class="copy" data-copy="cmd-ps2">Copy</button>
+        </div>
+        <div class="install-body" data-body2="sh" style="display:none">
+          <span class="prompt">$</span><code id="cmd-sh2">curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.sh | bash</code>
+          <button class="copy" data-copy="cmd-sh2">Copy</button>
+        </div>
       </div>
     </div>
-    <p style="text-align:center;color:var(--faint);font-size:.9rem">Then open any project in any agent — it reads <code style="font-family:var(--mono);color:var(--a2)">.aicontext/STATE.md</code> and catches up. Prefer to clone? <a href="https://github.com/AnasNafees1802/continuum#install" target="_blank" rel="noopener" style="color:var(--a2)">See all install options →</a></p>
+
+    <div class="opt">
+      <div class="opt-head"><span class="num">3</span><h3>Clone and run it yourself</h3></div>
+      <div class="prompt-box">
+<pre id="clone-cmd">git clone https://github.com/AnasNafees1802/continuum.git
+cd continuum
+# Windows:      powershell -ExecutionPolicy Bypass -File .\install-global.ps1
+# macOS/Linux:  bash ./install-global.sh</pre>
+        <button class="copy" data-copy="clone-cmd">Copy</button>
+      </div>
+      <p class="opt-note">Want to read the code before running anything? <a href="https://github.com/AnasNafees1802/continuum#install" target="_blank" rel="noopener" style="color:var(--a2)">See all install options on GitHub.</a></p>
+    </div>
+
+    <p style="text-align:center;color:var(--faint);font-size:.9rem;margin-top:8px">Then open any project in any agent. It reads <code style="font-family:var(--mono);color:var(--a2)">.aicontext/STATE.md</code> and catches you up automatically.</p>
   </div></section>
 
   <section class="block" style="border:none">

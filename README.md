@@ -13,7 +13,7 @@
   <a href="LICENSE">MIT</a>
 </p>
 
-Switch from Codex to Claude to Antigravity — or come back tomorrow after hitting a usage limit —
+Switch from Codex to Claude to Antigravity, or come back tomorrow after hitting a usage limit -
 and your agent already knows *what you're building, where you are, and what's next.* No re-explaining.
 
 ---
@@ -21,7 +21,7 @@ and your agent already knows *what you're building, where you are, and what's ne
 ## The problem
 
 You're building with one AI coding agent. You ship a couple of features, then the **daily limit
-hits** and it stops. You switch to another agent — but it knows *nothing*. You burn time and tokens
+hits** and it stops. You switch to another agent, but it knows *nothing*. You burn time and tokens
 re-explaining the project, and you lose the thread of *why* things were done a certain way.
 
 Each agent keeps its own private history (Claude Code in `~/.claude/projects/`, others elsewhere),
@@ -34,13 +34,13 @@ teaches *every* agent the same simple protocol:
 
 > **Read it when you start. Update it before you stop.**
 
-Because the memory lives in the repo — not in any one agent's silo — context survives the switch.
+Because the memory lives in the repo, not in any one agent's silo, context survives the switch.
 Any agent, any day, picks up exactly where the last one left off.
 
 ```
 your-project/
 ├── .aicontext/              # 📦 the portable memory (gitignored, machine-local)
-│   ├── STATE.md             #   ⭐ where we are right now — read this first
+│   ├── STATE.md             #   ⭐ where we are right now, read this first
 │   ├── TASKS.md             #   in progress / backlog / done
 │   ├── DECISIONS.md         #   append-only: why we chose what we chose
 │   ├── JOURNAL.md           #   append-only: per-session handoff log
@@ -58,18 +58,43 @@ your-project/
 
 ## Which agents?
 
-- **Claude Code** — via `CLAUDE.md` + the `continuum` skill.
-- **Codex, Antigravity, Windsurf, Gemini CLI, Cursor, Zed, …** — via **`AGENTS.md`**, the
+- **Claude Code**, via `CLAUDE.md` + the `continuum` skill.
+- **Codex, Antigravity, Windsurf, Gemini CLI, Cursor, Zed, …**, via **`AGENTS.md`**, the
   [emerging cross-agent standard](https://agents.md) read by 60k+ projects.
-- **Windsurf** — also gets a native `.windsurfrules` for belt-and-suspenders coverage.
+- **Windsurf**, also gets a native `.windsurfrules` for belt-and-suspenders coverage.
 
 Any agent that reads one of those files participates automatically.
 
+## Saves tokens, not just time
+
+Continuum saves real money, not just typing:
+
+- **No re-explaining.** Catch-up injects a compact summary (a few hundred tokens) instead of you re-pasting the whole project into every fresh session.
+- **No redone work.** A session killed by a usage limit is reconstructed, not repeated, which is the most expensive kind of waste there is.
+- **Bounded context.** Journal rotation keeps the ledger small, so the memory never bloats the very context window it exists to save.
+
 ## Install
 
-### ⚡ One line, no clone (recommended)
+### 🤖 Easiest: let your AI agent install it
 
-Installs Continuum into **every AI agent on your machine, once** — applies to all your projects:
+Paste this into Claude Code, Codex, Cursor, Gemini or any coding agent. It runs the installer for you (it will ask you to approve the command first, then you are done):
+
+```text
+Install "Continuum" globally on my machine. It's an open-source (MIT) tool that gives AI coding agents a shared memory so they keep context across sessions and tools: https://github.com/AnasNafees1802/continuum
+
+1. Detect my operating system.
+2. On Windows, run in PowerShell:
+   irm https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.ps1 | iex
+   On macOS or Linux, run in bash:
+   curl -fsSL https://raw.githubusercontent.com/AnasNafees1802/continuum/main/bootstrap.sh | bash
+3. When it finishes, tell me which agents it set up and remind me to restart any open agent sessions.
+
+Do not change anything else.
+```
+
+### ⚡ One line, no clone
+
+Installs Continuum into **every AI agent on your machine, once**, applies to all your projects:
 
 ```powershell
 # Windows / PowerShell
@@ -88,7 +113,7 @@ That downloads the repo to a temp folder, runs the global installer, and cleans 
 | **Per-project** ledger in current dir | `$env:CONTINUUM_MODE='project'; irm …/bootstrap.ps1 \| iex` | `curl -fsSL …/bootstrap.sh \| CONTINUUM_MODE=project bash` |
 
 > Piping a script from the internet to your shell runs remote code. That's standard for installers,
-> but you should trust the source — read [`bootstrap.ps1`](bootstrap.ps1) / [`bootstrap.sh`](bootstrap.sh)
+> but you should trust the source, read [`bootstrap.ps1`](bootstrap.ps1) / [`bootstrap.sh`](bootstrap.sh)
 > first if you like. Prefer not to pipe? Use the clone method below.
 
 ---
@@ -100,7 +125,7 @@ git clone https://github.com/AnasNafees1802/continuum.git
 cd continuum
 ```
 
-#### Option A — Global: install once, for every agent (recommended)
+#### Option A, Global: install once, for every agent (recommended)
 
 Wires the Continuum protocol into each agent's **global** config so *every* project you open in
 *any* agent follows it automatically (when that project has a `.aicontext/` folder). Run it once
@@ -126,15 +151,15 @@ protocol into that agent's global instruction file **and** wires its native hook
 | Claude Code | `~/.claude/CLAUDE.md` + skill `~/.claude/skills/continuum/` | `~/.claude/settings.json` |
 | Codex | `~/.codex/AGENTS.md` | `~/.codex/hooks.json` |
 | Gemini CLI | `~/.gemini/GEMINI.md` | `~/.gemini/settings.json` |
-| Antigravity | `~/.gemini/AGENTS.md` (cross-tool; avoids the GEMINI.md conflict) | — |
+| Antigravity | `~/.gemini/AGENTS.md` (cross-tool; avoids the GEMINI.md conflict) | n/a |
 | Cursor | (User Rules / `AGENTS.md` in-repo) | `~/.cursor/hooks.json` |
 | Windsurf | `~/.codeium/windsurf/memories/global_rules.md` | `~/.codeium/windsurf/hooks.json` |
 
 Hook merges are idempotent and preserve any hooks you already have. After this, the only per-project
-step is creating the `.aicontext/` ledger — which any agent will do for you on request (Claude
+step is creating the `.aicontext/` ledger, which any agent will do for you on request (Claude
 self-bootstraps; or run Option B).
 
-#### Option B — Per-project: set up the ledger + adapter files in one repo
+#### Option B, Per-project: set up the ledger + adapter files in one repo
 
 Run from the cloned folder, pointing at the project you want continuity for:
 
@@ -150,35 +175,35 @@ bash ./install.sh /path/to/my-project
 This creates `.aicontext/` and drops `CLAUDE.md` / `AGENTS.md` / `.windsurfrules` adapters in the repo
 root. Useful when you *haven't* done the global install, or want the adapters committed for teammates.
 
-> All installers are **idempotent** — re-run any time to refresh without touching accumulated context.
+> All installers are **idempotent**, re-run any time to refresh without touching accumulated context.
 > The per-project installer takes `-Force` (PS) / `FORCE=1` (sh) to also reset the ledger.
 
 ## How it stays reliable
 
-A memory ledger is only as good as the discipline that keeps it current. The naïve version —
-"agent, please read this at start and update it before you stop" — breaks in exactly the case
+A memory ledger is only as good as the discipline that keeps it current. The naïve version -
+"agent, please read this at start and update it before you stop", breaks in exactly the case
 Continuum exists for: **when a usage limit or crash kills the session, there's no chance to write
 the handoff.** So Continuum doesn't rely on remembering. It wires **native hooks** into every agent
 that has them and uses a **shared helper CLI** for the bookkeeping:
 
-- **Guaranteed catch-up** — a session-start hook injects `STATE.md` (plus recent journal + drift
+- **Guaranteed catch-up**, a session-start hook injects `STATE.md` (plus recent journal + drift
   notes) into context every session. Catching up stops being something the agent might forget.
-- **Handoff before context loss** — a pre-compaction hook fires right as the context window is about
+- **Handoff before context loss**, a pre-compaction hook fires right as the context window is about
   to compact and prompts the handoff *then*, while the detail still exists.
-- **A gentle safety net, not a nag** — a stop hook reminds you *once per session* if you changed
+- **A gentle safety net, not a nag**, a stop hook reminds you *once per session* if you changed
   files but never saved, or if you *committed* code but never recorded the decision behind it. Once,
-  never twice. (Keeps `TASKS.md`/`DECISIONS.md` honest too — not just `STATE.md`.)
-- **Reconstruction for hard kills** — if a session ends with no handoff (limit/crash), the next
+  never twice. (Keeps `TASKS.md`/`DECISIONS.md` honest too, not just `STATE.md`.)
+- **Reconstruction for hard kills**, if a session ends with no handoff (limit/crash), the next
   session detects the gap and `continuum import --from auto` rebuilds a draft handoff from the last
   agent's own transcript **plus** a git-based view. The one moment a hook *can't* capture is
-  recovered after the fact — even across a tool switch (Codex → Claude, or back).
-- **Never trust a stale ledger** — catch-up compares the saved git commit to `HEAD` and flags drift
+  recovered after the fact, even across a tool switch (Codex → Claude, or back).
+- **Never trust a stale ledger**, catch-up compares the saved git commit to `HEAD` and flags drift
   ("12 commits + uncommitted changes since last save"), so the agent verifies against `git` instead
   of confidently briefing you from an out-of-date snapshot.
-- **Bounded cost** — `continuum save` rotates old `JOURNAL.md` entries into `.aicontext/archive/`, so
+- **Bounded cost**, `continuum save` rotates old `JOURNAL.md` entries into `.aicontext/archive/`, so
   the ledger never bloats the context it's meant to save.
 
-The helper is plain PowerShell + bash (no runtime, no dependencies). It only does mechanics —
+The helper is plain PowerShell + bash (no runtime, no dependencies). It only does mechanics -
 timestamps, `manifest.json`, git checks, transcript parsing, rotation. **The agent still writes the
 actual prose**; that judgment isn't something to automate away.
 
@@ -188,10 +213,10 @@ actual prose**; that judgment isn't something to automate away.
 |-------|:---:|:---:|:---:|:---:|:---:|
 | Claude Code | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native | ✅ verified |
 | Codex | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native (cwd-matched) | ✅ verified |
-| Antigravity | ✅ honor-protocol¹ | — | — | git-based² | ✅ verified |
-| Gemini CLI | ✅ `SessionStart` hook | ✅ `PreCompress` | — | ✅ native | 🧪 beta |
+| Antigravity | ✅ honor-protocol¹ |, |, | git-based² | ✅ verified |
+| Gemini CLI | ✅ `SessionStart` hook | ✅ `PreCompress` |, | ✅ native | 🧪 beta |
 | Cursor | ✅ `sessionStart` hook | ✅ `preCompact` | ✅ `stop` | git-based | 🧪 beta |
-| Windsurf | ✅ first per-turn hook | — | — | git-based | 🧪 untested |
+| Windsurf | ✅ first per-turn hook |, |, | git-based | 🧪 untested |
 
 <sub>**Status** = has it been confirmed on a real session? ✅ verified · 🧪 not yet. ¹ Antigravity has no
 hook system, so catch-up rides the honor-protocol (it reads `AGENTS.md`/`GEMINI.md` and can run the
@@ -209,37 +234,37 @@ hook system, so catch-up rides the honor-protocol (it reads `AGENTS.md`/`GEMINI.
 1. **Day 1, Codex:** you build a feature. Before the limit hits, Codex updates `STATE.md` and
    appends a `JOURNAL.md` entry: *"Built auth flow, left off at wiring the token refresh."*
 2. **Day 1, later, Claude Code:** you open the project. Claude reads `.aicontext/STATE.md`, says
-   *"📍 Caught up: building the auth flow, next is token refresh,"* and continues — no re-explaining.
+   *"📍 Caught up: building the auth flow, next is token refresh,"* and continues, no re-explaining.
 3. **Day 2, Antigravity:** same thing. Everyone shares one brain.
 
 ## Design choices
 
-- **Gitignored by default** — `.aicontext/` is machine-local, not pushed. The adapter files *are*
+- **Gitignored by default**, `.aicontext/` is machine-local, not pushed. The adapter files *are*
   committed, so the protocol travels with the repo and each clone re-inits its own local ledger.
   (Want it shared with your team? Remove `.aicontext/` from `.gitignore` and commit it.)
-- **Plain Markdown + JSON** — no runtime, no service, no lock-in. Readable and editable by hand.
-- **`STATE.md` is living; `JOURNAL.md`/`DECISIONS.md` are append-only** — so you always have both a
+- **Plain Markdown + JSON**, no runtime, no service, no lock-in. Readable and editable by hand.
+- **`STATE.md` is living; `JOURNAL.md`/`DECISIONS.md` are append-only**, so you always have both a
   fast current snapshot and a full, trustworthy history.
 
 ## Roadmap
 
-- ✅ ~~Deterministic capture~~ — shipped: native session-start / pre-compaction / stop hooks on Claude
+- ✅ ~~Deterministic capture~~, shipped: native session-start / pre-compaction / stop hooks on Claude
   Code, Codex, Gemini and Cursor (Windsurf via its per-turn hook).
-- ✅ ~~History importer~~ — shipped: `continuum import --from auto` reconstructs a missed handoff from the
+- ✅ ~~History importer~~, shipped: `continuum import --from auto` reconstructs a missed handoff from the
   last agent's transcript (Claude/Codex/Gemini native parsers) plus a universal git-based view.
-- ✅ ~~Drift detection~~ — shipped: catch-up flags commits/changes since the ledger was last saved.
-- ✅ ~~One-line remote install~~ — shipped (see [One line, no clone](#-one-line-no-clone-recommended)).
-- **Native transcript parsers for Cursor/Windsurf** (SQLite `state.vscdb`) — today they use git-based reconstruction.
-- **Team mode** — optional shared (committed) ledger with conflict-resistant per-session journal files.
+- ✅ ~~Drift detection~~, shipped: catch-up flags commits/changes since the ledger was last saved.
+- ✅ ~~One-line remote install~~, shipped (see [One line, no clone](#-one-line-no-clone-recommended)).
+- **Native transcript parsers for Cursor/Windsurf** (SQLite `state.vscdb`), today they use git-based reconstruction.
+- **Team mode**, optional shared (committed) ledger with conflict-resistant per-session journal files.
 
 ## Author
 
 Built by **[Anas Nafees](https://www.linkedin.com/in/anas-nafees/)**.
 
-Continuum is open source and contributions are welcome — open an issue or PR at
+Continuum is open source and contributions are welcome, open an issue or PR at
 [github.com/AnasNafees1802/continuum](https://github.com/AnasNafees1802/continuum).
 If it saves you from re-explaining your project to yet another agent, a ⭐ is appreciated.
 
 ## License
 
-[MIT](LICENSE) © Anas Nafees — free to use, modify, and distribute. Use it everywhere.
+[MIT](LICENSE) © Anas Nafees, free to use, modify, and distribute. Use it everywhere.
