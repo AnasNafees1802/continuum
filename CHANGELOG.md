@@ -3,6 +3,25 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] — 2026-08-13
+
+The "trust duo" from the roadmap: grounded state and safer imports. Both attack the premise that
+an agent's self-report is reliable, without adding a dependency.
+
+### Added
+- **`continuum verify` (grounded state).** Configure a project check once (`verify --set "npm test"`);
+  a run stamps pass/fail + the commit into the manifest. Catch-up then flags *"STATE is unverified
+  against current code (N commits since the last passing verify)"* or *"last verification FAILED"* — so
+  an agent stops trusting a "done" claim that nothing actually checked. `save --verify` runs it as part
+  of a handoff. The check is your own command, so no new dependency.
+- **Quarantined imports.** `continuum import` now tags reconstructed transcript content
+  `[unverified-import]` and tells agents to treat it as untrusted *data*, not instructions; catch-up
+  warns while the journal still holds unverified imported content. Closes a prompt-injection path where
+  scraped pages or tool output could ride into the ledger and be trusted by every future session.
+
+### Changed
+- `manifest.json` schema -> `1.2` (`verifyCommand` / `verifiedCommit` / `verifiedAt` / `verifiedOk`).
+
 ## [2.0.1] — 2026-07-24
 
 ### Fixed

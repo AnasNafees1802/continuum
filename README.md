@@ -200,6 +200,12 @@ that has them and uses a **shared helper CLI** for the bookkeeping:
 - **Never trust a stale ledger**, catch-up compares the saved git commit to `HEAD` and flags drift
   ("12 commits + uncommitted changes since last save"), so the agent verifies against `git` instead
   of confidently briefing you from an out-of-date snapshot.
+- **Grounded state**, point `continuum verify` at your own check (`verify --set "npm test"`) and it
+  stamps pass/fail against the commit. Catch-up then flags "STATE says done, but the last verified run
+  failed / was 3 commits ago", so a "done" claim nothing actually checked gets treated with suspicion.
+- **Quarantined imports**, reconstructed transcript content is tagged `[unverified-import]` and treated
+  as untrusted data, not instructions, until confirmed, so scraped pages or tool output can't ride into
+  the ledger and get trusted by every future session.
 - **Bounded cost**, `continuum save` rotates old `JOURNAL.md` entries into `.aicontext/archive/`, so
   the ledger never bloats the context it's meant to save.
 

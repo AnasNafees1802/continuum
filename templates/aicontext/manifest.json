@@ -1,6 +1,6 @@
 {
   "continuum": {
-    "schemaVersion": "1.1",
+    "schemaVersion": "1.2",
     "project": "{{PROJECT_NAME}}",
     "createdAt": "{{DATE}}",
     "lastUpdated": "{{DATE}}",
@@ -10,6 +10,10 @@
     "handoffAt": null,
     "lastCommit": null,
     "lastSessionId": null,
+    "verifyCommand": null,
+    "verifiedCommit": null,
+    "verifiedAt": null,
+    "verifiedOk": null,
     "files": {
       "state": ".aicontext/STATE.md",
       "tasks": ".aicontext/TASKS.md",

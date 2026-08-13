@@ -89,6 +89,36 @@ then ok "import --from git: produces git reconstruction"; else bad "import git v
 if bash "$CONT" doctor | grep -q 'healthy'
 then ok "doctor: reports healthy"; else bad "doctor healthy"; fi
 
+# helper: pull additionalContext text out of a catch-up JSON line
+ctx() { python3 -c "import json,sys;print(json.load(sys.stdin)['hookSpecificOutput']['additionalContext'])"; }
+
+# 8. verify: configure + a passing run stamps verifiedOk=true + commit
+bash "$CONT" verify --set "true" >/dev/null 2>&1
+bash "$CONT" verify >/dev/null 2>&1
+if python3 -c "import json;c=json.load(open('.aicontext/manifest.json'))['continuum'];assert c['verifiedOk'] is True and c['verifiedCommit']"
+then ok "verify: passing run stamps verifiedOk=true + commit"; else bad "verify pass stamp"; fi
+
+# 9. catch-up flags STATE as unverified once new commits land after the last verify
+printf 'z\n' > verzz.txt; git add -A >/dev/null 2>&1; git commit -qm "post-verify change" >/dev/null 2>&1
+if printf '{"session_id":"v1"}' | bash "$CONT" catch-up | ctx | grep -q 'unverified against current code'
+then ok "catch-up: flags STATE unverified after new commits"; else bad "verify staleness flag"; fi
+
+# 10. a FAILED verify is surfaced in catch-up
+bash "$CONT" verify --set "false" >/dev/null 2>&1
+bash "$CONT" verify >/dev/null 2>&1 || true
+if printf '{"session_id":"v1"}' | bash "$CONT" catch-up | ctx | grep -q 'verification FAILED'
+then ok "catch-up: surfaces a failed verification"; else bad "verify fail flag"; fi
+
+# 11. quarantine: catch-up warns when the journal holds [unverified-import] content
+printf '\n## reconstructed [unverified-import]\nstuff from a transcript\n' >> .aicontext/JOURNAL.md
+if printf '{"session_id":"v2"}' | bash "$CONT" catch-up | ctx | grep -q 'UNVERIFIED'
+then ok "catch-up: warns on [unverified-import] journal content"; else bad "quarantine warning"; fi
+
+# 12. import output carries the quarantine tag (capture then grep; grep -q would SIGPIPE under pipefail)
+IMP2="$(bash "$CONT" import --from git 2>/dev/null)"
+if printf '%s' "$IMP2" | grep -q '\[unverified-import\]'
+then ok "import: output is tagged [unverified-import]"; else bad "import quarantine tag"; fi
+
 echo
 echo "Result: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ]
