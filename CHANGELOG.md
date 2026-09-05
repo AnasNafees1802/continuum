@@ -3,6 +3,32 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-09-05
+
+**Global memory — cross-project, cross-tool.** Continuum has always carried *project* context; now it
+also carries the *developer*. Tell one agent a durable preference once and every agent remembers it, in
+every project. This is the layer native vendor memory can't be: vendor memory follows the user inside
+one tool; Continuum's follows the user across all of them — because it rides the SessionStart hook
+Continuum already installs into every agent on the machine.
+
+### Added
+- **Personal memory store** at `~/.continuum/memory/MEMORY.md` (plain, human-readable markdown you can
+  read, edit, and audit — not an opaque blob). Each entry carries a scope label and a `user`/`agent`
+  source so agent-proposed memories stay visible.
+- **`continuum remember "<text>" [--scope <area>] [--source user|agent]`** — save a durable, cross-project
+  preference (dedups identical text). **`continuum forget <id|text>`** removes one; **`continuum memory`**
+  lists them. All three work from any directory — no `.aicontext/` project needed.
+- **Injected everywhere.** `catch-up` now emits a `GLOBAL MEMORY` block at session start in *every*
+  project — including folders with no project ledger — so preferences reach every agent, every project.
+  Existing installs get this on their next helper update; no re-wiring needed.
+- Adapters + skill teach agents to apply injected memories and to capture new durable preferences (and
+  to propose them, confirming first) — so it works on honor-protocol agents, not just Claude Code.
+
+### Notes
+- The store is local and plain-text by design — the security-correct answer to memory poisoning is a
+  memory you can *see and edit*, not one hidden behind a process. Agents are told never to store secrets
+  or one-off details, and to confirm before saving anything sensitive.
+
 ## [2.1.0] — 2026-08-13
 
 The "trust duo" from the roadmap: grounded state and safer imports. Both attack the premise that

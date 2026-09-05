@@ -13,6 +13,9 @@
 #   verify [--set "<cmd>"]             run the project's verify command; ground STATE against pass/fail
 #   compact                            rotate old JOURNAL entries into .aicontext/archive/
 #   status | doctor                    health + cross-agent drift/gap report
+#   remember "<text>" [--scope <area>] [--source user|agent]  add a cross-project global memory
+#   forget <id|text>                   remove a global memory
+#   memory                             list global memories
 set -uo pipefail
 
 # ---------------------------------------------------------------------------
@@ -21,6 +24,17 @@ set -uo pipefail
 have() { command -v "$1" >/dev/null 2>&1; }
 has_py3() { command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; }
 home_dir() { printf '%s' "${HOME:-$USERPROFILE}"; }
+
+# Global (cross-project) memory store. Lives outside any repo so it follows the USER, not a project.
+# CONTINUUM_HOME override matches the installer (which places ~/.continuum there too).
+cont_home() { printf '%s' "${CONTINUUM_HOME:-$(home_dir)}/.continuum"; }
+mem_dir()   { printf '%s' "$(cont_home)/memory"; }
+mem_file()  { printf '%s' "$(mem_dir)/MEMORY.md"; }
+short_id() { # deterministic 6-char id from a memory's text (for `forget <id>`)
+  local h; h="$(sha256_of "$1")"
+  [ -z "$h" ] && h="$(printf '%s' "$1" | cksum | awk '{print $1}')"
+  printf '%s' "${h:0:6}"
+}
 
 find_root() {
   local d="$PWD"
@@ -66,7 +80,7 @@ manifest_get() {
 }
 
 # session marker (key=value text, our own format — no JSON parser needed)
-marker_dir()  { printf '%s\n' "$ROOT/.aicontext/.session"; }
+marker_dir()  { printf '%s\n' "${MARKER_BASE:-$ROOT/.aicontext}/.session"; }
 marker_file() { printf '%s\n' "$(marker_dir)/${1:-default}.env"; }
 marker_get()  { [ -f "$2" ] && sed -nE "s/^$1=//p" "$2" | head -1; }
 # Atomic single-field update: rewrite to a temp file, then rename. Never leaves a truncated marker.
@@ -149,6 +163,20 @@ gap_detected() {
 }
 
 # ---------------------------------------------------------------------------
+# global memory — the user's durable, cross-project preferences (injected everywhere)
+# ---------------------------------------------------------------------------
+build_memory_block() {
+  local mf; mf="$(mem_file)"; [ -f "$mf" ] || return 0
+  local lines; lines="$(grep '^- ' "$mf" 2>/dev/null)"; [ -z "$lines" ] && return 0
+  echo "----- GLOBAL MEMORY (the user's durable, cross-project preferences - apply them here) -----"
+  # line format: "- <id> | <scope> | <src> | <date> | <text>"  ->  render "- [scope] text"
+  printf '%s\n' "$lines" | while IFS='|' read -r _id scope _src _date text; do
+    printf -- '- [%s] %s\n' "$(printf '%s' "$scope" | sed 's/^ *//; s/ *$//')" "$(printf '%s' "$text" | sed 's/^ *//; s/ *$//')"
+  done
+  echo "(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it: 'continuum remember \"<preference>\" [--scope <area>]'. Ask first before storing anything sensitive; do not store project secrets.)"
+}
+
+# ---------------------------------------------------------------------------
 # catch-up (unified JSON additionalContext for every platform's hook)
 # ---------------------------------------------------------------------------
 build_catchup_body() {
@@ -181,14 +209,27 @@ build_catchup_body() {
 cmd_catch_up() {
   local event="SessionStart" once=0
   while [ $# -gt 0 ]; do case "$1" in --event) event="$2"; shift 2;; --once) once=1; shift;; *) shift;; esac; done
+  # No project ledger here (any folder on the machine): still inject the user's GLOBAL memory,
+  # keeping the session marker under ~/.continuum so --once idempotency still works.
+  [ -z "$ROOT" ] && MARKER_BASE="$(cont_home)"
   local sid mf; sid="$(stdin_sid)"; [ -z "$sid" ] && sid="default"; mf="$(marker_file "$sid")"
   # per-turn hosts (Windsurf) call this every prompt: only emit the first time per session.
   if [ "$once" = "1" ] && [ -f "$mf" ] && [ "$(marker_get caughtup "$mf")" = "1" ]; then exit 0; fi
+  # Assemble: global memory (everywhere) + project ledger (only in a Continuum project).
+  local mblock body; mblock="$(build_memory_block)"
+  if [ -n "$ROOT" ]; then
+    local pbody; pbody="$(build_catchup_body)"
+    if [ -n "$mblock" ]; then body="$mblock
+$pbody"; else body="$pbody"; fi
+  else
+    [ -z "$mblock" ] && exit 0   # nothing to say: no project, no global memory
+    body="Continuum: the user's durable cross-project memory (this folder has no project ledger).
+$mblock"
+  fi
   # Compute all values first, then write the whole marker in ONE atomic operation (temp + rename).
   local _sc _ss _se tmp; _sc="$(git_sha)"; _ss="$(git_dirty_sum)"; _se="$(date +%s)"
   mkdir -p "$(dirname "$mf")"; tmp="$mf.tmp.$$"
   { printf 'startCommit=%s\nstartStatus=%s\nstartEpoch=%s\nnudged=0\nhandoff=0\ncaughtup=1\n' "$_sc" "$_ss" "$_se"; } > "$tmp" && mv -f "$tmp" "$mf"
-  local body; body="$(build_catchup_body)"
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' \
     "$event" "$(printf '%s' "$body" | json_escape)"
 }
@@ -519,6 +560,58 @@ cmd_doctor() {
   [ "$ok" = "1" ] && echo "  -> healthy" || echo "  -> problems found (see above); re-run the Continuum installer to repair."
 }
 
+# ---------------------------------------------------------------------------
+# global memory — write/list/remove (works from anywhere, no project needed)
+# ---------------------------------------------------------------------------
+cmd_remember() {
+  local scope="global" src="user" text=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --scope)  scope="$2"; shift 2;;
+      --source) src="$2";  shift 2;;
+      *) if [ -z "$text" ]; then text="$1"; else text="$text $1"; fi; shift;;
+    esac
+  done
+  text="$(printf '%s' "$text" | tr '\n\t' '  ' | sed 's/  */ /g; s/^ *//; s/ *$//')"
+  [ -z "$text" ] && { echo "usage: continuum remember \"<durable cross-project preference>\" [--scope <area>] [--source user|agent]" >&2; return 1; }
+  local mf; mf="$(mem_file)"; mkdir -p "$(dirname "$mf")"
+  [ -f "$mf" ] || printf '%s\n' \
+    "# Continuum Global Memory" \
+    "<!-- Durable, cross-project preferences. Injected into every AI agent at session start, in every project." \
+    "     list: 'continuum memory'   add: 'continuum remember \"...\"'   remove: 'continuum forget <id|text>' -->" \
+    "" > "$mf"
+  if grep -Fq -- "| $text" "$mf" 2>/dev/null; then echo "continuum: already remembered - \"$text\""; return 0; fi
+  local id date; id="$(short_id "$text")"; date="$(date '+%Y-%m-%d')"
+  printf -- '- %s | %s | %s | %s | %s\n' "$id" "$scope" "$src" "$date" "$text" >> "$mf"
+  echo "continuum: remembered [$scope] \"$text\" (id $id) - it will reach every agent, in every project."
+}
+
+cmd_forget() {
+  local q="$*"; [ -z "$q" ] && { echo "usage: continuum forget <id|text-substring>" >&2; return 1; }
+  local mf; mf="$(mem_file)"; [ -f "$mf" ] || { echo "continuum: no global memories yet."; return 0; }
+  local removed=0 tmp="$mf.tmp.$$"; : > "$tmp"
+  while IFS= read -r line; do
+    case "$line" in
+      "- "*) if printf '%s' "$line" | grep -Fq -- "$q"; then echo "  forgot: ${line#- }"; removed=$((removed+1)); else printf '%s\n' "$line" >> "$tmp"; fi ;;
+      *) printf '%s\n' "$line" >> "$tmp" ;;
+    esac
+  done < "$mf"
+  mv -f "$tmp" "$mf"
+  [ "$removed" = "0" ] && { echo "continuum: no memory matched \"$q\"."; return 0; }
+  echo "continuum: forgot $removed memory(ies)."
+}
+
+cmd_memory() {
+  local mf; mf="$(mem_file)"
+  [ -f "$mf" ] || { echo "continuum: no global memories yet. Add one:  continuum remember \"I prefer pnpm over npm\""; return 0; }
+  echo "Continuum global memory - $mf"
+  local n=0
+  while IFS= read -r line; do
+    case "$line" in "- "*) echo "  ${line#- }"; n=$((n+1));; esac
+  done < "$mf"
+  [ "$n" = "0" ] && echo "  (none yet - add: continuum remember \"...\")"
+}
+
 usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # ---------------------------------------------------------------------------
@@ -538,8 +631,8 @@ case "$CMD" in
 esac
 CUR_TRANSCRIPT="$(read_stdin_field transcript_path 2>/dev/null || true)"
 if ! ROOT="$(find_root)"; then
-  case "$CMD" in catch-up|precompact|guard) exit 0;; esac   # never break a session
-  ROOT=""
+  case "$CMD" in precompact|guard) exit 0;; esac   # project-only hooks: nothing to do without a ledger
+  ROOT=""   # catch-up still runs (to inject global memory); remember/forget/memory don't need a project
 fi
 
 case "$CMD" in
@@ -554,6 +647,9 @@ case "$CMD" in
   import)     cmd_import "$@" ;;
   status)     cmd_status ;;
   doctor)     cmd_doctor ;;
+  remember)   cmd_remember "$@" ;;
+  forget)     cmd_forget "$@" ;;
+  memory)     cmd_memory ;;
   help|-h|--help) usage ;;
-  *) echo "continuum: unknown command '$CMD' (try: catch-up precompact guard import save verify compact status doctor)" >&2; exit 2 ;;
+  *) echo "continuum: unknown command '$CMD' (try: catch-up precompact guard import save verify compact status doctor remember forget memory)" >&2; exit 2 ;;
 esac

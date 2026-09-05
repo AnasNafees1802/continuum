@@ -13,6 +13,7 @@ command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1 || { echo "s
 command -v git >/dev/null 2>&1 || { echo "smoke: git is required"; exit 2; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+export CONTINUUM_HOME="$T"   # isolate the global-memory store (~/.continuum) to the throwaway dir
 mkdir -p "$T/.aicontext"
 cp "$SRC"/templates/aicontext/* "$T/.aicontext/"
 for f in "$T"/.aicontext/*; do sed -e 's/{{PROJECT_NAME}}/smoke/g' -e 's/{{DATE}}/2026-01-01 00:00/g' "$f" > "$f.x" && mv "$f.x" "$f"; done
@@ -118,6 +119,34 @@ then ok "catch-up: warns on [unverified-import] journal content"; else bad "quar
 IMP2="$(bash "$CONT" import --from git 2>/dev/null)"
 if printf '%s' "$IMP2" | grep -q '\[unverified-import\]'
 then ok "import: output is tagged [unverified-import]"; else bad "import quarantine tag"; fi
+
+# 13. global memory: remember stores a cross-project preference and dedups identical text
+# (capture before grep: grep -q would SIGPIPE the producer and flip the result under pipefail)
+bash "$CONT" remember "Prefer pnpm over npm" --scope global >/dev/null 2>&1
+M13="$(bash "$CONT" memory)"
+D13="$(bash "$CONT" remember "Prefer pnpm over npm")"
+if printf '%s' "$M13" | grep -q 'Prefer pnpm over npm' && printf '%s' "$D13" | grep -q 'already remembered'
+then ok "remember: stores a global memory and dedups"; else bad "remember/dedup ($D13)"; fi
+
+# 14. cross-project reach: catch-up in a NON-project directory still injects global memory
+NP="$(mktemp -d)"
+if ( cd "$NP" && printf '{"session_id":"m1"}' | bash "$CONT" catch-up ) | ctx | grep -q 'GLOBAL MEMORY'
+then ok "catch-up: injects global memory even with no project ledger"; else bad "global memory injection (no project)"; fi
+rm -rf "$NP"
+
+# 15. in a Continuum project, catch-up shows BOTH the global memory and the project STATE
+C15="$(printf '{"session_id":"m2"}' | bash "$CONT" catch-up | ctx)"
+if printf '%s' "$C15" | grep -q 'GLOBAL MEMORY' && printf '%s' "$C15" | grep -q 'STATE.md'
+then ok "catch-up: combines global memory + project ledger"; else bad "combined catch-up"; fi
+
+# 16. forget removes a memory; an empty store injects no memory block in a non-project dir
+bash "$CONT" forget "pnpm" >/dev/null 2>&1
+NP2="$(mktemp -d)"
+OUT16="$( cd "$NP2" && printf '{"session_id":"m4"}' | bash "$CONT" catch-up )"
+rm -rf "$NP2"
+M16="$(bash "$CONT" memory)"
+if ! printf '%s' "$M16" | grep -q 'pnpm' && [ -z "$OUT16" ]
+then ok "forget: removes memory; empty store yields no injection"; else bad "forget/empty (out=[$OUT16])"; fi
 
 echo
 echo "Result: $PASS passed, $FAIL failed"

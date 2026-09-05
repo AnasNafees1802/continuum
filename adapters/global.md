@@ -14,4 +14,17 @@ seamlessly across AI coding agents — even after switching tools or hitting a u
 If a project has **no** `.aicontext/` and the user wants cross-agent continuity, create it
 (`.aicontext/` + `STATE.md`, `TASKS.md`, `DECISIONS.md`, `JOURNAL.md`, `manifest.json`, `PROTOCOL.md`,
 seeded from what the repo shows) and add `.aicontext/` to `.gitignore`. Otherwise ignore this block.
+
+### 🧠 Global memory (cross-project, cross-tool)
+Continuum also keeps a **personal memory** at `~/.continuum/memory/` that is injected into *every*
+project on this machine — in every agent — at session start (the `GLOBAL MEMORY` block). It holds the
+user's **durable, cross-project preferences**: a like/dislike, a default tool or library, a naming or
+style convention. This is what makes "tell one agent once, every agent remembers" work.
+- **Apply** any injected `GLOBAL MEMORY` items to the current work, using judgement about scope.
+- **Capture** a new one the moment the user states a durable, cross-project preference (e.g. *"I don't
+  like purple in my sites"*, *"always use pnpm"*): `continuum remember "<preference>" [--scope <area>]`.
+  You may also propose one yourself when you notice such a preference — add `--source agent`, and confirm
+  with the user first.
+- **Never** store project secrets, one-off task details, or anything sensitive without asking.
+- **Manage:** `continuum memory` (list) · `continuum forget <id|text>` (remove).
 <!-- CONTINUUM:END -->

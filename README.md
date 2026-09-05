@@ -65,6 +65,25 @@ your-project/
 
 Any agent that reads one of those files participates automatically.
 
+## 🧠 Global memory — tell one agent, every agent remembers
+
+Continuum carries the **project**; it also carries **you**. Alongside the per-project ledger, it keeps a
+small personal memory at `~/.continuum/memory/` — your **durable, cross-project preferences** — and
+injects it into *every* agent, in *every* project, at session start.
+
+```text
+You (once, in any tool):  "I don't like purple in my websites."
+Agent:                     continuum remember "Avoid purple in web UIs" --scope web
+        …tomorrow, a different project, a different agent…
+Agent (already knows):     picks a non-purple palette, no reminder needed.
+```
+
+Either you say *"remember this,"* or the agent proposes it when it notices a standing preference (and
+confirms first). It's plain, human-readable markdown you can read, edit, and delete — `continuum memory`
+to list, `continuum forget <id>` to remove. Native memory in Claude/Codex/Gemini follows you inside *one*
+vendor; this follows you across *all* of them, because it rides the same hook Continuum already installs
+into every agent.
+
 ## Saves tokens, not just time
 
 Continuum saves real money, not just typing:

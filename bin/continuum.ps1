@@ -48,6 +48,12 @@ function Git-DirtySum { param($r) Stable-Hash ((& git -C $r status --porcelain 2
 function File-MtimeEpoch { param($p) if (-not (Test-Path $p)) { return 0 }; [int64]([datetimeoffset]((Get-Item $p).LastWriteTimeUtc)).ToUnixTimeSeconds() }
 function Encode-Cwd { param($p) ($p -replace '[^A-Za-z0-9]', '-') }
 
+# Global (cross-project) memory store - follows the USER, not a project. CONTINUUM_HOME matches the installer.
+function Cont-Home { $b = if ($env:CONTINUUM_HOME) { $env:CONTINUUM_HOME } else { $env:USERPROFILE }; Join-Path $b '.continuum' }
+function Mem-File { Join-Path (Cont-Home) 'memory\MEMORY.md' }
+function Short-Id { param($t) (Sha256-Hex $t).Substring(0, 6) }
+function Positional-Args { param($withVal) $out = @(); $i = 0; while ($i -lt $Rest.Count) { $a = $Rest[$i]; if ($withVal -contains $a) { $i += 2; continue }; $out += $a; $i++ }; return $out }
+
 function Read-Manifest { param($r) $f = Join-Path $r '.aicontext\manifest.json'; if (Test-Path $f) { Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json } }
 function Manifest-Get { param($r, $key) $m = Read-Manifest $r; if ($m -and $m.continuum -and ($m.continuum.PSObject.Properties.Name -contains $key)) { return $m.continuum.$key }; return $null }
 function Set-Prop { param($obj, $name, $value) if ($obj.PSObject.Properties.Name -contains $name) { $obj.$name = $value } else { $obj | Add-Member -NotePropertyName $name -NotePropertyValue $value } }
@@ -67,7 +73,7 @@ function Write-Lines-Atomic {
   Move-Item -Path $tmp -Destination $file -Force
 }
 # Atomic UTF-8 write WITHOUT BOM. PS 5.1's Set-Content -Encoding utf8 adds a BOM, which breaks
-# Python/jq readers — a cross-tool hazard for JSON the other agents must parse.
+# Python/jq readers - a cross-tool hazard for JSON the other agents must parse.
 function Write-Text-Atomic {
   param($file, $text)
   $dir = Split-Path $file -Parent
@@ -175,6 +181,22 @@ function Gap-Detected {
   return ($newest -gt $hEpoch)
 }
 
+# --- global memory (the user's durable, cross-project preferences) ---------
+function Build-MemoryBlock {
+  $mf = Mem-File
+  if (-not (Test-Path $mf)) { return '' }
+  $mem = @(Get-Content $mf -Encoding UTF8 | Where-Object { $_ -match '^- ' })
+  if ($mem.Count -eq 0) { return '' }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.AppendLine('----- GLOBAL MEMORY (the user''s durable, cross-project preferences - apply them here) -----')
+  foreach ($line in $mem) {
+    $parts = $line -split '\|', 5   # "- <id> | <scope> | <src> | <date> | <text>"
+    if ($parts.Count -ge 5) { [void]$sb.AppendLine('- [' + $parts[1].Trim() + '] ' + $parts[4].Trim()) }
+  }
+  [void]$sb.Append("(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it: 'continuum remember ""<preference>"" [--scope <area>]'. Ask first before storing anything sensitive; do not store project secrets.)")
+  return $sb.ToString()
+}
+
 # --- catch-up (unified JSON additionalContext) -----------------------------
 function Build-CatchupBody {
   param($r)
@@ -214,12 +236,24 @@ function Cmd-CatchUp {
   param($r)
   $event = Arg-Val '--event' 'SessionStart'; $once = Arg-Has '--once'
   $sid = Stdin-Sid; if (-not $sid) { $sid = 'default' }
-  $mf = Marker-File $r $sid
+  # No project ledger here: still inject the user's GLOBAL memory; keep the marker under ~/.continuum.
+  $mbase = if ($r) { Join-Path $r '.aicontext' } else { Cont-Home }
+  $mf = Join-Path (Join-Path $mbase '.session') ($sid + '.env')
   if ($once -and (Test-Path $mf) -and ((Marker-Get $mf 'caughtup') -eq '1')) { exit 0 }
+  # Assemble: global memory (everywhere) + project ledger (only in a Continuum project).
+  $mblock = Build-MemoryBlock
+  if ($r) {
+    $pbody = Build-CatchupBody $r
+    $body = if ($mblock) { $mblock + "`n" + $pbody } else { $pbody }
+  }
+  else {
+    if (-not $mblock) { exit 0 }
+    $body = "Continuum: the user's durable cross-project memory (this folder has no project ledger).`n" + $mblock
+  }
   # Compute all values first, then write the whole marker in ONE atomic operation.
-  $sc = Git-Sha $r; $ss = Git-DirtySum $r; $se = Now-Epoch
+  $sc = if ($r) { Git-Sha $r } else { '' }; $ss = if ($r) { Git-DirtySum $r } else { '0' }; $se = Now-Epoch
   Write-Lines-Atomic $mf @("startCommit=$sc", "startStatus=$ss", "startEpoch=$se", "nudged=0", "handoff=0", "caughtup=1")
-  Write-Output (Emit-AdditionalContext $event (Build-CatchupBody $r))
+  Write-Output (Emit-AdditionalContext $event $body)
 }
 
 function Cmd-PreCompact {
@@ -467,15 +501,60 @@ function Cmd-Doctor {
   if ($ok) { Write-Output '  -> healthy' } else { Write-Output '  -> problems found (see above); re-run the Continuum installer to repair.' }
 }
 
-function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status doctor' }
+# --- global memory: write / list / remove (works from anywhere, no project) ---
+function Cmd-Remember {
+  $scope = Arg-Val '--scope' 'global'; $src = Arg-Val '--source' 'user'
+  $text = (((Positional-Args @('--scope', '--source')) -join ' ') -replace '\s+', ' ').Trim()
+  if (-not $text) { Write-Output 'usage: continuum remember "<durable cross-project preference>" [--scope <area>] [--source user|agent]'; return }
+  $mf = Mem-File; $dir = Split-Path $mf -Parent
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  if (Test-Path $mf) { $existing = @(Get-Content $mf -Encoding UTF8) }
+  else {
+    $existing = @('# Continuum Global Memory',
+      '<!-- Durable, cross-project preferences. Injected into every AI agent at session start, in every project.',
+      '     list: ''continuum memory''   add: ''continuum remember "..."''   remove: ''continuum forget <id|text>'' -->', '')
+  }
+  if ($existing | Where-Object { $_ -match '^- ' -and $_.EndsWith("| $text") }) { Write-Output "continuum: already remembered - ""$text"""; return }
+  $id = Short-Id $text; $date = Get-Date -Format 'yyyy-MM-dd'
+  $all = $existing + "- $id | $scope | $src | $date | $text"
+  Write-Text-Atomic $mf (($all -join "`n") + "`n")
+  Write-Output "continuum: remembered [$scope] ""$text"" (id $id) - it will reach every agent, in every project."
+}
+
+function Cmd-Forget {
+  $q = ((Positional-Args @()) -join ' ').Trim()
+  if (-not $q) { Write-Output 'usage: continuum forget <id|text-substring>'; return }
+  $mf = Mem-File
+  if (-not (Test-Path $mf)) { Write-Output 'continuum: no global memories yet.'; return }
+  $kept = @(); $removed = 0
+  foreach ($line in (Get-Content $mf -Encoding UTF8)) {
+    if ($line -match '^- ' -and $line.Contains($q)) { Write-Output ("  forgot: " + ($line -replace '^- ', '')); $removed++ }
+    else { $kept += $line }
+  }
+  Write-Text-Atomic $mf (($kept -join "`n") + "`n")
+  if ($removed -eq 0) { Write-Output "continuum: no memory matched ""$q""." } else { Write-Output "continuum: forgot $removed memory(ies)." }
+}
+
+function Cmd-Memory {
+  $mf = Mem-File
+  if (-not (Test-Path $mf)) { Write-Output 'continuum: no global memories yet. Add one:  continuum remember "I prefer pnpm over npm"'; return }
+  Write-Output "Continuum global memory - $mf"
+  $n = 0
+  foreach ($line in (Get-Content $mf -Encoding UTF8)) { if ($line -match '^- ') { Write-Output ("  " + ($line -replace '^- ', '')); $n++ } }
+  if ($n -eq 0) { Write-Output '  (none yet - add: continuum remember "...")' }
+}
+
+function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status doctor remember forget memory' }
 
 # --- dispatch --------------------------------------------------------------
 $script:CurTranscript = Stdin-Transcript
 $ROOT = Find-Root
 if (-not $ROOT) {
-  if ($Command -in @('catch-up', 'precompact', 'guard')) { exit 0 }
-  Write-Output 'continuum: no .aicontext/ ledger found from this directory.'
-  exit 1
+  if ($Command -in @('precompact', 'guard')) { exit 0 }   # project-only hooks
+  if ($Command -in @('save', 'verify', 'compact', 'import', 'status', 'doctor')) {
+    Write-Output 'continuum: no .aicontext/ ledger found from this directory.'; exit 1
+  }
+  # catch-up (global memory), remember, forget, memory continue with $ROOT = $null
 }
 switch ($Command) {
   # Hook commands are FAIL-SAFE: swallow any error and exit 0 so a failure can never break the host.
@@ -488,6 +567,9 @@ switch ($Command) {
   'import' { Cmd-Import $ROOT }
   'status' { Cmd-Status $ROOT }
   'doctor' { Cmd-Doctor $ROOT }
+  'remember' { Cmd-Remember }
+  'forget' { Cmd-Forget }
+  'memory' { Cmd-Memory }
   default { Usage }
 }
 exit 0
