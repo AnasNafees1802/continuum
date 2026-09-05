@@ -22,7 +22,18 @@ set -uo pipefail
 # helpers
 # ---------------------------------------------------------------------------
 have() { command -v "$1" >/dev/null 2>&1; }
-has_py3() { command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; }
+# Resolve a WORKING Python across systems: Linux `python3`, Windows `python` or the `py -3`
+# launcher; skip the Microsoft Store stub (it fails `-c ''`). Result memoized in PY_BIN.
+PY_BIN=""; PY_DONE=0
+have_py() {
+  [ "$PY_DONE" = "1" ] && { [ -n "$PY_BIN" ]; return; }
+  PY_DONE=1; local c
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then PY_BIN="$c"; return 0; fi
+  done
+  command -v py >/dev/null 2>&1 && py -3 -c '' >/dev/null 2>&1 && { PY_BIN="py -3"; return 0; }
+  return 1
+}
 home_dir() { printf '%s' "${HOME:-$USERPROFILE}"; }
 
 # Global (cross-project) memory store. Lives outside any repo so it follows the USER, not a project.
@@ -58,7 +69,7 @@ git_dirty_sum() { git -C "$ROOT" status --porcelain 2>/dev/null | cksum | awk '{
 sha256_of() {
   if have sha256sum; then printf '%s' "$1" | sha256sum | awk '{print $1}'
   elif have shasum; then printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
-  elif has_py3; then printf '%s' "$1" | python3 -c 'import sys,hashlib;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+  elif have_py; then printf '%s' "$1" | $PY_BIN -c 'import sys,hashlib;print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
   fi
 }
 
@@ -295,8 +306,8 @@ cmd_save() {
       | .continuum.sessionCount=((.continuum.sessionCount // 0)+1)
       | .continuum.agentsSeen=(((.continuum.agentsSeen // []) + [$a]) | unique)
     ' "$f" > "$tmp" && mv "$tmp" "$f"
-  elif has_py3; then
-    CONT_U="$uh" CONT_H="$ui" CONT_A="$agent" CONT_C="$sha" CONT_S="${sid:-}" python3 - "$f" <<'PY'
+  elif have_py; then
+    CONT_U="$uh" CONT_H="$ui" CONT_A="$agent" CONT_C="$sha" CONT_S="${sid:-}" $PY_BIN - "$f" <<'PY'
 import json,os,sys
 p=sys.argv[1]
 d=json.load(open(p,encoding="utf-8-sig"))          # tolerate a BOM (PS may have written one)
@@ -383,8 +394,8 @@ cmd_import() {
   echo "# any STATE/JOURNAL entry you create from it tagged [unverified-import] until a human confirms it."
   echo
   if [ "$from" != "git" ]; then
-    if has_py3; then
-      CONT_FROM="$from" CONT_ROOT="$ROOT" CONT_HOME="$(home_dir)" python3 - <<'PY'
+    if have_py; then
+      CONT_FROM="$from" CONT_ROOT="$ROOT" CONT_HOME="$(home_dir)" $PY_BIN - <<'PY'
 import os,sys,glob,json,hashlib,re
 frm=os.environ.get("CONT_FROM","auto"); root=os.environ["CONT_ROOT"]; home=os.environ["CONT_HOME"]
 rootr=os.path.realpath(root)
@@ -489,7 +500,7 @@ else:
 print()
 PY
     else
-      echo "(python3 not available — skipping native transcript parse; git view below still works)"
+      echo "(no Python available — skipping native transcript parse; git view below still works)"
       echo
     fi
   fi
@@ -503,7 +514,7 @@ cmd_verify() {
   if [ "${1:-}" = "--set" ]; then
     shift; local cmd="$*"
     if have jq; then jq --arg c "$cmd" '.continuum.verifyCommand=$c' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f"
-    elif has_py3; then CONT_C="$cmd" python3 - "$f" <<'PY'
+    elif have_py; then CONT_C="$cmd" $PY_BIN - "$f" <<'PY'
 import json,os,sys
 p=sys.argv[1]; d=json.load(open(p,encoding="utf-8-sig")); d.setdefault("continuum",{})["verifyCommand"]=os.environ["CONT_C"]
 tmp=p+".tmp."+str(os.getpid()); open(tmp,"w",encoding="utf-8").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,p)
@@ -517,7 +528,7 @@ PY
   local ok=true; ( cd "$ROOT" && sh -c "$cmd" ) || ok=false
   local sha at; sha="$(git_sha)"; at="$(now_iso)"
   if have jq; then jq --arg s "$sha" --arg a "$at" --argjson k "$ok" '.continuum.verifiedCommit=$s|.continuum.verifiedAt=$a|.continuum.verifiedOk=$k' "$f" > "$f.tmp.$$" && mv "$f.tmp.$$" "$f"
-  elif has_py3; then CONT_S="$sha" CONT_A="$at" CONT_OK="$ok" python3 - "$f" <<'PY'
+  elif have_py; then CONT_S="$sha" CONT_A="$at" CONT_OK="$ok" $PY_BIN - "$f" <<'PY'
 import json,os,sys
 p=sys.argv[1]; d=json.load(open(p,encoding="utf-8-sig")); c=d.setdefault("continuum",{})
 c["verifiedCommit"]=os.environ["CONT_S"]; c["verifiedAt"]=os.environ["CONT_A"]; c["verifiedOk"]=(os.environ["CONT_OK"]=="true")
@@ -612,7 +623,8 @@ cmd_memory() {
   [ "$n" = "0" ] && echo "  (none yet - add: continuum remember \"...\")"
 }
 
-usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
+# Print the header comment block (from line 2 to the first non-comment line), stripped of '# '.
+usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; }
 
 # ---------------------------------------------------------------------------
 # dispatch

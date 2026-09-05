@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Continuum smoke tests — exercise the helper CLI end-to-end on a throwaway ledger.
-# Requires: bash, git, python3 (for JSON assertions). Run: bash test/smoke.sh
+# Requires: bash, git, and a working Python (python3/python/py -3, for JSON assertions). Run: bash test/smoke.sh
 set -uo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,7 +9,11 @@ PASS=0; FAIL=0
 ok()  { echo "  PASS: $1"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
-command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1 || { echo "smoke: python3 is required"; exit 2; }
+# Resolve a working Python across systems (Linux python3, Windows python / py -3; skip the Store stub).
+PY=""
+for c in python3 python; do if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then PY="$c"; break; fi; done
+[ -z "$PY" ] && command -v py >/dev/null 2>&1 && py -3 -c '' >/dev/null 2>&1 && PY="py -3"
+[ -z "$PY" ] && { echo "smoke: a working python3/python is required"; exit 2; }
 command -v git >/dev/null 2>&1 || { echo "smoke: git is required"; exit 2; }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
@@ -27,7 +31,7 @@ echo "Continuum smoke tests (ledger: $T)"
 # 1. save -> manifest is valid JSON, no BOM, sessionCount incremented, commit stamped
 # (paths are relative to the ledger cwd so assertions work regardless of shell/python path forms)
 bash "$CONT" save --agent smoke >/dev/null 2>&1
-if python3 - .aicontext/manifest.json <<'PY'
+if $PY - .aicontext/manifest.json <<'PY'
 import json,sys
 raw=open(sys.argv[1],'rb').read()
 assert raw[:3]!=b'\xef\xbb\xbf', "manifest has a UTF-8 BOM"
@@ -41,15 +45,15 @@ then ok "save: valid no-BOM manifest, sessionCount=1, commit+agent stamped"; els
 
 # 2. save again -> sessionCount 2 (idempotent bookkeeping)
 bash "$CONT" save --agent smoke >/dev/null 2>&1
-if python3 -c "import json;assert json.load(open('.aicontext/manifest.json'))['continuum']['sessionCount']==2"
+if $PY -c "import json;assert json.load(open('.aicontext/manifest.json'))['continuum']['sessionCount']==2"
 then ok "save: sessionCount increments to 2"; else bad "save sessionCount increment"; fi
 
 # 3. catch-up -> stdout is a single valid JSON object with additionalContext
-if printf '{"session_id":"smoke1"}' | bash "$CONT" catch-up --event SessionStart | python3 -c "import json,sys;d=json.load(sys.stdin);assert d['hookSpecificOutput']['hookEventName']=='SessionStart';assert 'STATE.md' in d['hookSpecificOutput']['additionalContext']"
+if printf '{"session_id":"smoke1"}' | bash "$CONT" catch-up --event SessionStart | $PY -c "import json,sys;d=json.load(sys.stdin);assert d['hookSpecificOutput']['hookEventName']=='SessionStart';assert 'STATE.md' in d['hookSpecificOutput']['additionalContext']"
 then ok "catch-up: emits valid JSON additionalContext"; else bad "catch-up JSON"; fi
 
 # 4. guard nudges at most once per session (dirty tree, STATE not updated)
-python3 -c "import os,time;os.utime('.aicontext/STATE.md',(time.time()-3600,)*2)"
+$PY -c "import os,time;os.utime('.aicontext/STATE.md',(time.time()-3600,)*2)"
 printf 'work\n' > newwork.txt
 G1="$(printf '{"session_id":"smoke1","stop_hook_active":false}' | bash "$CONT" guard)"
 G2="$(printf '{"session_id":"smoke1","stop_hook_active":false}' | bash "$CONT" guard)"
@@ -58,7 +62,7 @@ then ok "guard: nudges once, silent thereafter"; else bad "guard once ($G1 / $G2
 
 # 4b. guard also nudges when you committed code but never logged a decision
 printf '{"session_id":"smoke2"}' | bash "$CONT" catch-up >/dev/null 2>&1
-python3 -c "import os,time;t=time.time();os.utime('.aicontext/STATE.md',(t+3600,)*2);os.utime('.aicontext/DECISIONS.md',(t-3600,)*2)"
+$PY -c "import os,time;t=time.time();os.utime('.aicontext/STATE.md',(t+3600,)*2);os.utime('.aicontext/DECISIONS.md',(t-3600,)*2)"
 printf 'feat\n' > feat_b.txt; git add -A >/dev/null 2>&1; git commit -qm "smoke feat" >/dev/null 2>&1
 GD="$(printf '{"session_id":"smoke2","stop_hook_active":false}' | bash "$CONT" guard)"
 if echo "$GD" | grep -q 'DECISIONS.md'
@@ -91,12 +95,12 @@ if bash "$CONT" doctor | grep -q 'healthy'
 then ok "doctor: reports healthy"; else bad "doctor healthy"; fi
 
 # helper: pull additionalContext text out of a catch-up JSON line
-ctx() { python3 -c "import json,sys;print(json.load(sys.stdin)['hookSpecificOutput']['additionalContext'])"; }
+ctx() { $PY -c "import json,sys;print(json.load(sys.stdin)['hookSpecificOutput']['additionalContext'])"; }
 
 # 8. verify: configure + a passing run stamps verifiedOk=true + commit
 bash "$CONT" verify --set "true" >/dev/null 2>&1
 bash "$CONT" verify >/dev/null 2>&1
-if python3 -c "import json;c=json.load(open('.aicontext/manifest.json'))['continuum'];assert c['verifiedOk'] is True and c['verifiedCommit']"
+if $PY -c "import json;c=json.load(open('.aicontext/manifest.json'))['continuum'];assert c['verifiedOk'] is True and c['verifiedCommit']"
 then ok "verify: passing run stamps verifiedOk=true + commit"; else bad "verify pass stamp"; fi
 
 # 9. catch-up flags STATE as unverified once new commits land after the last verify

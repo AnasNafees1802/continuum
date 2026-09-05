@@ -3,6 +3,19 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] — 2026-09-05
+
+### Fixed
+- **Cross-system Python resolution.** The bash helper and installers probed only `python3`, so on
+  Windows — where `python3` is often the non-functional Microsoft Store stub and the real interpreter is
+  `python` or the `py -3` launcher — `save` silently fell back to a lossy scalar-only manifest update
+  (dropping `sessionCount` / `agentsSeen`), and the bash installers couldn't wire hooks. A new resolver
+  tries `python3` → `python` → `py -3` and verifies each actually executes (`-c ''`), skipping the stub.
+  Applied in `bin/continuum.sh`, `install.sh`, `install-global.sh`, and `test/smoke.sh` (which now runs
+  on any of the three). The PowerShell path was never affected (it uses native JSON, no Python).
+- **`continuum help` output.** No longer spills past the command list into script internals (the usage
+  printer now stops at the end of the header comment instead of a fixed line range).
+
 ## [2.2.0] — 2026-09-05
 
 **Global memory — cross-project, cross-tool.** Continuum has always carried *project* context; now it

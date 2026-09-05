@@ -19,7 +19,17 @@ BIN_DIR="$HOME_DIR/.continuum/bin"
 BIN_SH="$BIN_DIR/continuum.sh"
 BIN_PS1="$BIN_DIR/continuum.ps1"
 
-has_py3() { command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; }
+# Resolve a WORKING Python across systems (Linux python3, Windows python / py -3; skip the Store stub).
+PY_BIN=""; PY_DONE=0
+have_py() {
+  [ "$PY_DONE" = "1" ] && { [ -n "$PY_BIN" ]; return; }
+  PY_DONE=1; local c
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then PY_BIN="$c"; return 0; fi
+  done
+  command -v py >/dev/null 2>&1 && py -3 -c '' >/dev/null 2>&1 && { PY_BIN="py -3"; return 0; }
+  return 1
+}
 
 set_managed_block() {
   local file="$1"
@@ -39,8 +49,8 @@ set_managed_block() {
 merge_hooks() {
   local file="$1" fmt="$2" defs="$3"
   mkdir -p "$(dirname "$file")"
-  if has_py3; then
-    CONT_FILE="$file" CONT_FMT="$fmt" CONT_SH="$BIN_SH" CONT_PS="$BIN_PS1" CONT_DEFS="$defs" python3 - <<'PY'
+  if have_py; then
+    CONT_FILE="$file" CONT_FMT="$fmt" CONT_SH="$BIN_SH" CONT_PS="$BIN_PS1" CONT_DEFS="$defs" $PY_BIN - <<'PY'
 import json, os
 f=os.environ["CONT_FILE"]; fmt=os.environ["CONT_FMT"]; sh=os.environ["CONT_SH"]; ps=os.environ["CONT_PS"]
 defs=json.loads(os.environ["CONT_DEFS"])
@@ -65,7 +75,7 @@ with open(f, "w") as fh:
 print("      hooks wired -> %s" % f)
 PY
   else
-    echo "      ! install python3 to auto-wire hooks for this agent (protocol still works via its instruction file)."
+    echo "      ! install Python to auto-wire hooks for this agent (protocol still works via its instruction file)."
   fi
 }
 

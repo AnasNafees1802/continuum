@@ -17,14 +17,24 @@ FORCE="${FORCE:-0}"
 
 expand_tokens() { sed -e "s/{{PROJECT_NAME}}/${PROJECT_NAME//\//\\/}/g" -e "s/{{DATE}}/$NOW/g"; }
 
-has_py3() { command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; }
+# Resolve a WORKING Python across systems (Linux python3, Windows python / py -3; skip the Store stub).
+PY_BIN=""; PY_DONE=0
+have_py() {
+  [ "$PY_DONE" = "1" ] && { [ -n "$PY_BIN" ]; return; }
+  PY_DONE=1; local c
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then PY_BIN="$c"; return 0; fi
+  done
+  command -v py >/dev/null 2>&1 && py -3 -c '' >/dev/null 2>&1 && { PY_BIN="py -3"; return 0; }
+  return 1
+}
 
 # Merge Continuum hooks into a Claude Code settings JSON, idempotently (refresh ours, keep the rest).
 merge_hooks() {
   local settings="$1" script="$2"
   mkdir -p "$(dirname "$settings")"
-  if has_py3; then
-    CONT_SETTINGS="$settings" CONT_SCRIPT="$script" python3 - <<'PY'
+  if have_py; then
+    CONT_SETTINGS="$settings" CONT_SCRIPT="$script" $PY_BIN - <<'PY'
 import json, os
 p = os.environ["CONT_SETTINGS"]; sc = os.environ["CONT_SCRIPT"]
 try:
@@ -58,7 +68,7 @@ PY
     done
     echo "  wired SessionStart/PreCompact/Stop hooks -> $settings"
   else
-    echo "  ! install python3 or jq to auto-wire hooks (skill/protocol still works without them)."
+    echo "  ! install Python or jq to auto-wire hooks (skill/protocol still works without them)."
   fi
 }
 
