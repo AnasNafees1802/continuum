@@ -22,3 +22,7 @@ Thumbs.db
 
 # raw logo source (site uses the optimized docs/logo.png + favicon.png)
 /docs/continuum_logo.png
+
+# Remotion promo-video SOURCE stays local, never pushed (heavy deps + render output).
+# Only the optimized web MP4 in docs/ is committed. Re-render locally from the video/ project.
+/video/
