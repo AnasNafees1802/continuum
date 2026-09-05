@@ -6,7 +6,7 @@
 <title>Continuum, one shared memory for every AI coding agent</title>
 <meta name="description" content="Switch from Codex to Claude to Antigravity, or come back after a usage limit, and your agent already knows what you're building, where you are, and what's next. No re-explaining." />
 <meta property="og:title" content="Continuum, one shared memory for every AI coding agent" />
-<meta property="og:description" content="Cross-agent session continuity. Read it when you start. Update it before you stop. Context survives the switch." />
+<meta property="og:description" content="Cross-agent session continuity plus global memory: tell one agent once, every agent remembers, in every project. Read it when you start, update it before you stop." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/png" href="favicon.png" />
 <style>
@@ -164,6 +164,10 @@
   .cursor{display:inline-block;width:8px;height:1.05em;background:var(--a2);vertical-align:text-bottom;animation:blink 1.1s steps(2) infinite}
   @keyframes blink{50%{opacity:0}}
 
+  /* demo video */
+  .video-frame{border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);box-shadow:0 40px 120px rgba(0,0,0,.55);background:#0b0c11;line-height:0}
+  .video-frame video{display:block;width:100%;height:auto}
+
   /* cta */
   .cta{text-align:center;background:var(--grad-soft);border:1px solid rgba(139,123,255,.25);border-radius:24px;padding:60px 30px;margin:0 24px}
   .cta h2{font-size:clamp(1.7rem,4vw,2.6rem);letter-spacing:-.03em;margin-bottom:14px}
@@ -188,6 +192,7 @@
     <a class="logo" href="#top"><img class="mark" src="logo.png" alt="Continuum logo" /> Continuum</a>
     <div class="nav-links">
       <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#memory">Memory</a>
       <a class="hide-sm" href="#agents">Agents</a>
       <a class="hide-sm" href="#reliable">Reliability</a>
       <a class="hide-sm" href="#install">Install</a>
@@ -199,7 +204,7 @@
 <main id="top">
   <section class="hero wrap">
     <img class="hero-logo reveal in" src="logo.png" alt="Continuum" />
-    <span class="badge"><span class="dot"></span> <b>v2.0.0</b> shipped · MIT · works with 6 agents</span>
+    <span class="badge"><span class="dot"></span> <b>v2.2</b> · global memory shipped · MIT</span>
     <h1>One shared memory for<br><span class="grad-text">every AI coding agent.</span></h1>
     <p class="lead">Switch from Codex to Claude to Antigravity, or come back tomorrow after a usage limit, and your agent already knows <span style="color:var(--text)">what you're building, where you are, and what's next.</span> No re-explaining.</p>
     <div class="hero-cta">
@@ -233,6 +238,14 @@
       <span class="pill"><span class="pdot" style="background:var(--beta)"></span>Windsurf</span>
     </div>
   </section>
+
+  <!-- demo video -->
+  <section class="block" style="border:none;padding:20px 0 0"><div class="wrap reveal" style="max-width:940px">
+    <div class="video-frame">
+      <video src="continuum-promo.mp4" poster="promo-poster.jpg" autoplay muted loop playsinline preload="metadata"></video>
+    </div>
+    <p style="text-align:center;color:var(--faint);font-size:.84rem;margin-top:14px;font-family:var(--mono)">The 35-second story: the amnesia problem, the catch-up, and global memory.</p>
+  </div></section>
 
   <!-- problem / solution -->
   <section class="block"><div class="wrap reveal">
@@ -287,6 +300,29 @@
 
 <span class="g">Want me to pick up the token refresh where Codex left off?</span> <span class="cursor"></span></div>
     </div>
+  </div></section>
+
+  <!-- global memory (new in v2.2) -->
+  <section class="block" id="memory"><div class="wrap reveal">
+    <div class="sec-head">
+      <span class="eyebrow">New in v2.2</span>
+      <h2>Tell one agent once.<br><span class="grad-text">Every agent remembers.</span></h2>
+      <p>Beyond per-project context, Continuum keeps your durable preferences in a personal memory that reaches every agent, in every project, at session start.</p>
+    </div>
+    <div class="term">
+      <div class="term-bar"><span class="tc t1"></span><span class="tc t2"></span><span class="tc t3"></span><span class="tt">claude · ~/project-a</span></div>
+<div class="term-body"><span class="u">you ›</span> <span class="g">I always use pnpm, remember that</span>
+<span class="u">$</span> <span class="g">continuum remember "always use pnpm"</span>
+<span class="ok">✓ remembered · reaches every agent, in every project</span>
+
+<span class="c">next week · a different project · a different tool</span>
+
+<span class="c">[ codex · ~/project-b ]  session start</span>
+<span class="k">GLOBAL MEMORY</span>
+<span class="g">- [global] always use pnpm</span>
+<span class="u">$</span> <span class="g">pnpm install</span>  <span class="c">(already knows)</span> <span class="cursor"></span></div>
+    </div>
+    <p class="matrix-note">Plain text you can read, edit, and delete, not an opaque blob. Vendor-neutral: say it once in Claude, and Codex in another repo already knows.</p>
   </div></section>
 
   <!-- reliability features -->
@@ -418,7 +454,7 @@ cd continuum
   <div><img src="logo.png" alt="" style="height:18px;vertical-align:-4px;margin-right:6px" /> <b>Continuum</b> · <span style="color:var(--faint)">MIT © <span id="yr"></span> Anas Nafees</span></div>
   <div class="foot-links">
     <a href="https://github.com/AnasNafees1802/continuum" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/AnasNafees1802/continuum/releases/tag/v2.0.0" target="_blank" rel="noopener">v2.0.0</a>
+    <a href="https://github.com/AnasNafees1802/continuum/releases" target="_blank" rel="noopener">v2.2.1</a>
     <a href="https://www.linkedin.com/in/anas-nafees/" target="_blank" rel="noopener">LinkedIn</a>
   </div>
 </div></footer>
