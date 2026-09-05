@@ -18,9 +18,9 @@ and your agent already knows *what you're building, where you are, and what's ne
 
 <p align="center">
   <a href="https://github.com/AnasNafees1802/continuum/blob/main/docs/continuum-promo.mp4">
-    <img src="docs/promo-poster.jpg" alt="Watch the Continuum demo" width="640" />
+    <img src="docs/continuum-demo.gif" alt="Continuum demo" width="640" />
   </a>
-  <br /><em>▶ 35-second demo — the problem, the catch-up, and global memory</em>
+  <br /><em>▶ Click for the full 35-second demo: the problem, the catch-up, and global memory.</em>
 </p>
 
 ---
