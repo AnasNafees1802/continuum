@@ -23,8 +23,11 @@ style convention. This is what makes "tell one agent once, every agent remembers
 - **Apply** any injected `GLOBAL MEMORY` items to the current work, using judgement about scope.
 - **Capture** a new one the moment the user states a durable, cross-project preference (e.g. *"I don't
   like purple in my sites"*, *"always use pnpm"*): `continuum remember "<preference>" [--scope <area>]`.
-  You may also propose one yourself when you notice such a preference — add `--source agent`, and confirm
+  You may also propose one yourself when you notice such a preference: add `--source agent`, and confirm
   with the user first.
+- **"Remember" means Continuum.** When the user says *"remember this"*, *"add this to memory"*, or *"so I
+  don't have to repeat it"*, treat it as a Continuum global memory (`continuum remember`), NOT your host
+  agent's own separate memory. That is what makes the preference reach every tool, in every project.
 - **Never** store project secrets, one-off task details, or anything sensitive without asking.
 - **Manage:** `continuum memory` (list) · `continuum forget <id|text>` (remove).
 <!-- CONTINUUM:END -->

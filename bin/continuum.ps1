@@ -61,7 +61,7 @@ function Set-Prop { param($obj, $name, $value) if ($obj.PSObject.Properties.Name
 # session marker (key=value text; matches the bash version)
 function Marker-Dir { param($r) Join-Path $r '.aicontext\.session' }
 function Marker-File { param($r, $sid) if (-not $sid) { $sid = 'default' }; Join-Path (Marker-Dir $r) ($sid + '.env') }
-function Marker-Get { param($file, $key) if (-not (Test-Path $file)) { return $null }; foreach ($line in Get-Content $file) { if ($line -match "^$key=(.*)$") { return $Matches[1] } }; return $null }
+function Marker-Get { param($file, $key) if (-not (Test-Path $file)) { return $null }; foreach ($line in Get-Content $file -Encoding UTF8) { if ($line -match "^$key=(.*)$") { return $Matches[1] } }; return $null }
 # Atomic write: build content fully, write a temp file, then rename over the target.
 # A truncated/empty file can never appear even if the process is killed mid-run.
 function Write-Lines-Atomic {
@@ -86,7 +86,7 @@ function Write-Text-Atomic {
 function Marker-Set {
   param($file, $key, $value)
   $lines = @(); $found = $false
-  if (Test-Path $file) { $lines = @(foreach ($line in Get-Content $file) { if ($line -match "^$key=") { $found = $true; "$key=$value" } else { $line } }) }
+  if (Test-Path $file) { $lines = @(foreach ($line in Get-Content $file -Encoding UTF8) { if ($line -match "^$key=") { $found = $true; "$key=$value" } else { $line } }) }
   if (-not $found) { $lines += "$key=$value" }
   Write-Lines-Atomic $file $lines
 }
@@ -284,7 +284,7 @@ function Cmd-Guard {
   $decM = File-MtimeEpoch (Join-Path $r '.aicontext\DECISIONS.md')
   $reason = $null
   if (-not ($stateM -gt $startEpoch)) {
-    $reason = "you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'."
+    $reason = "you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'. Also, if the user stated a durable, cross-project preference this session (a default tool, a convention, a like/dislike), capture it with 'continuum remember' (the preference in quotes)."
   }
   elseif ($committed -and -not ($decM -gt $startEpoch)) {
     $reason = "you committed changes this session but DECISIONS.md wasn't updated. If any of it was a design/architectural choice, log it (decision + why) so the next agent doesn't have to reverse-engineer it."
@@ -317,6 +317,7 @@ function Cmd-Save {
   Write-Text-Atomic $f ($m | ConvertTo-Json -Depth 12)
   if ($sid) { Marker-Set (Marker-File $r $sid) 'handoff' '1' }
   $sha = Git-Sha $r; $short = if ($sha) { $sha.Substring(0, [Math]::Min(7, $sha.Length)) } else { '' }
+  if (-not $sha) { Write-Output 'continuum: WARNING - not a git repository (or no commits yet); commit not stamped, so drift/verify checks will be limited.' }
   Write-Output "continuum: handoff saved (agent=$agent, commit=$short, at $(Now-Human))."
   Cmd-Compact $r $true
 }
@@ -328,7 +329,7 @@ function Cmd-Compact {
   $keep = 20
   $md = Marker-Dir $r
   if (Test-Path $md) { Get-ChildItem $md -Filter *.env -File | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | Remove-Item -Force -ErrorAction SilentlyContinue }
-  $lines = Get-Content $j
+  $lines = Get-Content $j -Encoding UTF8   # MUST be UTF-8: PS 5.1 default (cp1252) mangles em dashes/emoji on rewrite
   $headerIdx = @(); for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^## ') { $headerIdx += $i } }
   if ($headerIdx.Count -le $keep) { if (-not $quiet) { Write-Output "continuum: JOURNAL has $($headerIdx.Count) entries (<= $keep) - no rotation needed." }; return }
   $cut = $headerIdx[$keep]

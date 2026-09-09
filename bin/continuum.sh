@@ -279,7 +279,7 @@ cmd_guard() {
   dec_mtime="$(file_mtime "$ROOT/.aicontext/DECISIONS.md")"
   if ! { [ "$state_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
     # did real work but never updated STATE -> no handoff saved
-    reason="you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'."
+    reason="you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'. Also, if the user stated a durable, cross-project preference this session (a default tool, a convention, a like/dislike), capture it with 'continuum remember' (the preference in quotes)."
   elif [ "$committed" = "1" ] && ! { [ "$dec_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
     # saved/updated STATE, and committed code, but never touched the decision log
     reason="you committed changes this session but DECISIONS.md wasn't updated. If any of it was a design/architectural choice, log it (decision + why) so the next agent doesn't have to reverse-engineer it."
@@ -332,6 +332,7 @@ PY
     echo "continuum: jq/python3 not found — updated scalar fields only (sessionCount/agentsSeen unchanged)." >&2
   fi
   [ -n "${sid:-}" ] && marker_set handoff 1 "$(marker_file "$sid")"
+  [ -z "$sha" ] && echo "continuum: WARNING - not a git repository (or no commits yet); commit not stamped, so drift/verify checks will be limited." >&2
   echo "continuum: handoff saved (agent=$agent, commit=${sha:0:7}, at $uh)."
   cmd_compact --quiet
 }

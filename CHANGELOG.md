@@ -3,6 +3,26 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.2] — 2026-09-09
+
+Fixes and a reinforcement gap, all found by heavy real-world use.
+
+### Fixed
+- **JOURNAL mojibake on rotation (PowerShell).** `compact` read `JOURNAL.md` with `Get-Content` at the
+  PS 5.1 default codepage (cp1252), so every 20-entry rotation re-decoded UTF-8 and rewrote mangled
+  em dashes / emoji, compounding over time and corrupting both the live journal and the archive. All
+  journal and marker reads now force `-Encoding UTF8`. (bash was never affected.)
+- **Silent save outside a git repo.** `save` now warns "not a git repository ... commit not stamped"
+  instead of quietly stamping an empty commit, so the trust-but-verify promise is never silently skipped
+  (bash + PowerShell).
+
+### Changed
+- **Global memory is now actively reinforced, not just documented.** The Stop-hook guard also reminds you
+  to capture a durable cross-project preference with `continuum remember`, matching how it already gates
+  `save`. Adapters + skill now state plainly that when the user says "remember this", that means
+  `continuum remember` (the cross-tool memory), not the host agent's own memory. Closes the
+  reinforcement/naming gap that made agents lean on `save` but skip global memory.
+
 ## [2.2.1] — 2026-09-05
 
 ### Fixed

@@ -41,10 +41,13 @@ that is injected into *every* project on this machine, in *every* agent, at sess
 `GLOBAL MEMORY` block in the catch-up). This is how a preference the user states in one tool/project is
 remembered everywhere afterward.
 - **Apply** any injected `GLOBAL MEMORY` items to the work at hand, using judgement about their scope.
-- **Capture** a new one the moment the user states a durable, cross-project preference — a like/dislike,
-  a default tool or library, a naming/style convention (e.g. *"I don't like purple in my sites"*,
+- **Capture** a new one the moment the user states a durable, cross-project preference (a like/dislike,
+  a default tool or library, a naming/style convention, e.g. *"I don't like purple in my sites"*,
   *"always use pnpm"*): `continuum remember "<preference>" [--scope <area>]`. You may propose one yourself
-  when you notice such a preference — add `--source agent` and confirm with the user first.
+  when you notice such a preference: add `--source agent` and confirm with the user first.
+- **"Remember" means Continuum, not the host.** When the user says *"remember this"*, *"add this to
+  memory"*, or *"so I don't have to tell you again"*, that is a request for `continuum remember` (global,
+  cross-tool memory), NOT your host agent's own built-in memory. Reach for `continuum remember` first.
 - **Never** store project secrets, one-off task details, or sensitive data without asking.
 - **Manage:** `continuum memory` (list) · `continuum forget <id|text>` (remove). These work from any
   directory — no `.aicontext/` project required.
