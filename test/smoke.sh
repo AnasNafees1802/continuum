@@ -2,6 +2,7 @@
 # Continuum smoke tests — exercise the helper CLI end-to-end on a throwaway ledger.
 # Requires: bash, git, and a working Python (python3/python/py -3, for JSON assertions). Run: bash test/smoke.sh
 set -uo pipefail
+export CONTINUUM_NO_AUTOUPDATE=1   # tests must never phone home / self-update
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONT="$SRC/bin/continuum.sh"

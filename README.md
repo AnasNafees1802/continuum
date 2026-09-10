@@ -232,6 +232,7 @@ that has them and uses a **shared helper CLI** for the bookkeeping:
 - **Quarantined imports**, reconstructed transcript content is tagged `[unverified-import]` and treated
   as untrusted data, not instructions, until confirmed, so scraped pages or tool output can't ride into
   the ledger and get trusted by every future session.
+- **Self-updating**, after a `git push` every install updates itself via a throttled (once/24h), background self-update, so fixes reach everyone with no manual reinstall. Opt out with `CONTINUUM_NO_AUTOUPDATE=1`.
 - **Bounded cost**, `continuum save` rotates old `JOURNAL.md` entries into `.aicontext/archive/`, so
   the ledger never bloats the context it's meant to save.
 

@@ -40,6 +40,8 @@ function Find-Root {
 function Now-Human { Get-Date -Format 'yyyy-MM-dd HH:mm' }
 function Now-Iso { Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz' }
 function Now-Epoch { [int64]([datetimeoffset]::UtcNow).ToUnixTimeSeconds() }
+# Exact way to invoke THIS helper on this machine (the hook runs it by absolute path; 'continuum' is not on PATH).
+function Self-Cmd { 'powershell -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"' }
 function Git-Sha { param($r) (& git -C $r rev-parse HEAD 2>$null) }
 function Git-Branch { param($r) (& git -C $r rev-parse --abbrev-ref HEAD 2>$null) }
 function Stable-Hash { param([string]$s) if (-not $s) { return '0' }; $md5 = [System.Security.Cryptography.MD5]::Create(); ($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($s)) | ForEach-Object { $_.ToString('x2') }) -join '' }
@@ -51,6 +53,29 @@ function Encode-Cwd { param($p) ($p -replace '[^A-Za-z0-9]', '-') }
 # Global (cross-project) memory store - follows the USER, not a project. CONTINUUM_HOME matches the installer.
 function Cont-Home { $b = if ($env:CONTINUUM_HOME) { $env:CONTINUUM_HOME } else { $env:USERPROFILE }; Join-Path $b '.continuum' }
 function Mem-File { Join-Path (Cont-Home) 'memory\MEMORY.md' }
+
+$script:ContRaw = 'https://raw.githubusercontent.com/AnasNafees1802/continuum/main'
+# Self-update: re-run the idempotent bootstrap when the pushed version differs. Best-effort, never errors.
+function Cmd-SelfUpdate {
+  if ($env:CONTINUUM_NO_AUTOUPDATE) { return }
+  $remote = $null
+  try { $remote = ([string](Invoke-RestMethod -TimeoutSec 6 "$script:ContRaw/VERSION")).Trim() } catch { return }
+  if (-not $remote) { return }
+  $localV = ''; $vf = Join-Path (Cont-Home) 'bin\VERSION'; if (Test-Path $vf) { $localV = (Get-Content $vf -Raw).Trim() }
+  if ($remote -eq $localV) { return }
+  try { (Invoke-RestMethod -TimeoutSec 30 "$script:ContRaw/bootstrap.ps1") | Invoke-Expression } catch {}
+}
+# Called from catch-up: at most once/24h, spawn a detached self-update so the hot path never hits the network.
+function Maybe-AutoUpdate {
+  if ($env:CONTINUUM_NO_AUTOUPDATE) { return }
+  $stamp = Join-Path (Cont-Home) '.last-update-check'
+  $now = Now-Epoch; $last = 0
+  if (Test-Path $stamp) { try { $last = [int64]((Get-Content $stamp -Raw).Trim()) } catch {} }
+  if (($now - $last) -lt 86400) { return }
+  New-Item -ItemType Directory -Force -Path (Cont-Home) | Out-Null
+  Set-Content -Path $stamp -Value $now -Encoding ascii
+  try { Start-Process -WindowStyle Hidden -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, 'self-update') | Out-Null } catch {}
+}
 function Short-Id { param($t) (Sha256-Hex $t).Substring(0, 6) }
 function Positional-Args { param($withVal) $out = @(); $i = 0; while ($i -lt $Rest.Count) { $a = $Rest[$i]; if ($withVal -contains $a) { $i += 2; continue }; $out += $a; $i++ }; return $out }
 
@@ -193,7 +218,7 @@ function Build-MemoryBlock {
     $parts = $line -split '\|', 5   # "- <id> | <scope> | <src> | <date> | <text>"
     if ($parts.Count -ge 5) { [void]$sb.AppendLine('- [' + $parts[1].Trim() + '] ' + $parts[4].Trim()) }
   }
-  [void]$sb.Append("(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it: 'continuum remember ""<preference>"" [--scope <area>]'. Ask first before storing anything sensitive; do not store project secrets.)")
+  [void]$sb.Append("(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it with the CONTINUUM CLI shown at the top of this context, appending:  remember ""<preference>"" [--scope <area>]. Ask first before storing anything sensitive; do not store project secrets.)")
   return $sb.ToString()
 }
 
@@ -234,6 +259,7 @@ function Emit-AdditionalContext { param($event, $text) (@{ hookSpecificOutput = 
 
 function Cmd-CatchUp {
   param($r)
+  Maybe-AutoUpdate
   $event = Arg-Val '--event' 'SessionStart'; $once = Arg-Has '--once'
   $sid = Stdin-Sid; if (-not $sid) { $sid = 'default' }
   # No project ledger here: still inject the user's GLOBAL memory; keep the marker under ~/.continuum.
@@ -250,6 +276,8 @@ function Cmd-CatchUp {
     if (-not $mblock) { exit 0 }
     $body = "Continuum: the user's durable cross-project memory (this folder has no project ledger).`n" + $mblock
   }
+  $cli = "CONTINUUM CLI: run any continuum command in this session as:  " + (Self-Cmd) + " <command>   (e.g. remember / save / verify / status / import). 'continuum' is NOT on PATH - use this exact form."
+  $body = $cli + "`n`n" + $body
   # Compute all values first, then write the whole marker in ONE atomic operation.
   $sc = if ($r) { Git-Sha $r } else { '' }; $ss = if ($r) { Git-DirtySum $r } else { '0' }; $se = Now-Epoch
   Write-Lines-Atomic $mf @("startCommit=$sc", "startStatus=$ss", "startEpoch=$se", "nudged=0", "handoff=0", "caughtup=1")
@@ -571,6 +599,7 @@ switch ($Command) {
   'remember' { Cmd-Remember }
   'forget' { Cmd-Forget }
   'memory' { Cmd-Memory }
+  'self-update' { try { Cmd-SelfUpdate } catch {}; exit 0 }
   default { Usage }
 }
 exit 0

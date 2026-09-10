@@ -102,7 +102,17 @@ echo
 # Shared helper CLI: install once, referenced by every agent's hooks.
 mkdir -p "$BIN_DIR"
 cp "$SRC/bin/continuum.sh" "$BIN_SH"; cp "$SRC/bin/continuum.ps1" "$BIN_PS1"; chmod +x "$BIN_SH" 2>/dev/null || true
-echo "  helper CLI -> $BIN_DIR"
+[ -f "$SRC/VERSION" ] && cp "$SRC/VERSION" "$BIN_DIR/VERSION"
+# Shim so a bare `continuum` works in any POSIX shell (bin dir is added to PATH below).
+printf '#!/usr/bin/env bash\nexec bash "%s" "$@"\n' "$BIN_SH" > "$BIN_DIR/continuum"; chmod +x "$BIN_DIR/continuum" 2>/dev/null || true
+# Put the bin dir on PATH via the user's shell rc files (idempotent; new shells pick it up). Skip for a custom CONTINUUM_HOME.
+if [ -z "${CONTINUUM_HOME:-}" ]; then
+  for rc in "$HOME_DIR/.bashrc" "$HOME_DIR/.zshrc" "$HOME_DIR/.profile"; do
+    [ -f "$rc" ] || continue
+    grep -q '.continuum/bin' "$rc" || printf '\n# Continuum CLI on PATH\nexport PATH="$HOME/.continuum/bin:$PATH"\n' >> "$rc"
+  done
+fi
+echo "  helper CLI -> $BIN_DIR (bare 'continuum' available in new shells)"
 echo
 
 for entry in "${AGENTS[@]}"; do

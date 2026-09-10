@@ -112,6 +112,18 @@ Write-Host ""
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.ps1') -Destination $BinDir -Force
 Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.sh') -Destination $BinDir -Force
+if (Test-Path (Join-Path $Src 'VERSION')) { Copy-Item -LiteralPath (Join-Path $Src 'VERSION') -Destination $BinDir -Force }
+# Shims so a bare `continuum` works in cmd/PowerShell and Git Bash (the bin dir is added to PATH below).
+Write-Text (Join-Path $BinDir 'continuum.cmd') "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0continuum.ps1`" %*`r`n"
+Write-Text (Join-Path $BinDir 'continuum') "#!/usr/bin/env bash`nexec bash `"`$(dirname `"`$0`")/continuum.sh`" `"`$@`"`n"
+# Put the bin dir on the user's PATH (idempotent; new terminals pick it up). Skip for a custom CONTINUUM_HOME.
+if (-not $env:CONTINUUM_HOME) {
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $userPath) { $userPath = '' }
+    if (($userPath -split ';') -notcontains $BinDir) {
+        [Environment]::SetEnvironmentVariable('Path', ($BinDir + ';' + $userPath).TrimEnd(';'), 'User')
+        Write-Host "  added ~\.continuum\bin to your PATH (open a new terminal to use bare 'continuum')" -ForegroundColor DarkGray
+    }
+}
 Write-Host ("  helper CLI -> " + $BinDir.Replace($Home_, '~')) -ForegroundColor DarkGray
 Write-Host ""
 

@@ -62,6 +62,24 @@ Continuum already installs into every agent on the machine.
   memory you can *see and edit*, not one hidden behind a process. Agents are told never to store secrets
   or one-off details, and to confirm before saving anything sensitive.
 
+## [2.3.0] — 2026-09-10
+
+### Added
+- **Auto-update.** Installs update themselves. Catch-up spawns a throttled (once/24h), detached
+  `self-update` that re-runs the idempotent bootstrap when the pushed `VERSION` differs. It applies for
+  the next session and never blocks the current one. Opt out with `CONTINUUM_NO_AUTOUPDATE=1`. A `git
+  push` now reaches every user with no manual reinstall.
+- **Bare `continuum` on PATH.** The global installer ships shims (`continuum.cmd` for cmd/PowerShell, a
+  `continuum` bash wrapper) and adds `~/.continuum/bin` to PATH, so `continuum <cmd>` works in any shell.
+
+### Fixed
+- **Ad-hoc commands (e.g. `remember`) silently failing → agent fell back to host memory.** Agents were
+  told to run bare `continuum`, but the bin dir wasn't on PATH and a `.ps1` isn't callable from bash, so
+  ad-hoc calls failed (hooks survived only because they use absolute paths). Catch-up now injects the
+  exact per-machine invocation into session context (`CONTINUUM CLI: <resolved command>`), so an agent
+  always knows how to run any command, even before the PATH change reaches a new shell. Memory-capture
+  guidance points at it. Found from real heavy-use feedback.
+
 ## [2.1.0] — 2026-08-13
 
 The "trust duo" from the roadmap: grounded state and safer imports. Both attack the premise that

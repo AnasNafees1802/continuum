@@ -35,10 +35,34 @@ have_py() {
   return 1
 }
 home_dir() { printf '%s' "${HOME:-$USERPROFILE}"; }
+# Exact way to invoke THIS helper on this machine (the hook runs it by absolute path; 'continuum' is not on PATH).
+self_cmd() { printf 'bash "%s"' "${BASH_SOURCE[0]:-$0}"; }
 
 # Global (cross-project) memory store. Lives outside any repo so it follows the USER, not a project.
 # CONTINUUM_HOME override matches the installer (which places ~/.continuum there too).
 cont_home() { printf '%s' "${CONTINUUM_HOME:-$(home_dir)}/.continuum"; }
+
+CONT_RAW="https://raw.githubusercontent.com/AnasNafees1802/continuum/main"
+# Self-update: if the pushed version differs from the installed one, re-run the idempotent bootstrap.
+# Best-effort; never errors. Runs detached from catch-up (throttled), so users auto-update, no manual step.
+cmd_selfupdate() {
+  [ -n "${CONTINUUM_NO_AUTOUPDATE:-}" ] && return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  local remote local_v; remote="$(curl -fsSL --max-time 6 "$CONT_RAW/VERSION" 2>/dev/null | tr -d '[:space:]')"
+  [ -z "$remote" ] && return 0
+  local_v=""; [ -f "$(cont_home)/bin/VERSION" ] && local_v="$(tr -d '[:space:]' < "$(cont_home)/bin/VERSION")"
+  [ "$remote" = "$local_v" ] && return 0
+  curl -fsSL --max-time 30 "$CONT_RAW/bootstrap.sh" 2>/dev/null | bash >/dev/null 2>&1 || true
+}
+# Called from catch-up: at most once/24h, spawn a detached self-update (zero network on the hot path).
+maybe_autoupdate() {
+  [ -n "${CONTINUUM_NO_AUTOUPDATE:-}" ] && return 0
+  local stamp now last; stamp="$(cont_home)/.last-update-check"; now="$(date +%s)"; last=0
+  [ -f "$stamp" ] && last="$(cat "$stamp" 2>/dev/null || echo 0)"
+  [ $((now - last)) -lt 86400 ] 2>/dev/null && return 0
+  mkdir -p "$(cont_home)"; echo "$now" > "$stamp"
+  ( nohup bash "${BASH_SOURCE[0]:-$0}" self-update >/dev/null 2>&1 & ) >/dev/null 2>&1 || true
+}
 mem_dir()   { printf '%s' "$(cont_home)/memory"; }
 mem_file()  { printf '%s' "$(mem_dir)/MEMORY.md"; }
 short_id() { # deterministic 6-char id from a memory's text (for `forget <id>`)
@@ -184,7 +208,7 @@ build_memory_block() {
   printf '%s\n' "$lines" | while IFS='|' read -r _id scope _src _date text; do
     printf -- '- [%s] %s\n' "$(printf '%s' "$scope" | sed 's/^ *//; s/ *$//')" "$(printf '%s' "$text" | sed 's/^ *//; s/ *$//')"
   done
-  echo "(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it: 'continuum remember \"<preference>\" [--scope <area>]'. Ask first before storing anything sensitive; do not store project secrets.)"
+  echo "(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it with the CONTINUUM CLI shown at the top of this context, appending:  remember \"<preference>\" [--scope <area>]. Ask first before storing anything sensitive; do not store project secrets.)"
 }
 
 # ---------------------------------------------------------------------------
@@ -220,6 +244,7 @@ build_catchup_body() {
 cmd_catch_up() {
   local event="SessionStart" once=0
   while [ $# -gt 0 ]; do case "$1" in --event) event="$2"; shift 2;; --once) once=1; shift;; *) shift;; esac; done
+  maybe_autoupdate
   # No project ledger here (any folder on the machine): still inject the user's GLOBAL memory,
   # keeping the session marker under ~/.continuum so --once idempotency still works.
   [ -z "$ROOT" ] && MARKER_BASE="$(cont_home)"
@@ -237,6 +262,9 @@ $pbody"; else body="$pbody"; fi
     body="Continuum: the user's durable cross-project memory (this folder has no project ledger).
 $mblock"
   fi
+  body="CONTINUUM CLI: run any continuum command in this session as:  $(self_cmd) <command>   (e.g. remember / save / verify / status / import). 'continuum' is NOT on PATH - use this exact form.
+
+$body"
   # Compute all values first, then write the whole marker in ONE atomic operation (temp + rename).
   local _sc _ss _se tmp; _sc="$(git_sha)"; _ss="$(git_dirty_sum)"; _se="$(date +%s)"
   mkdir -p "$(dirname "$mf")"; tmp="$mf.tmp.$$"
@@ -655,6 +683,7 @@ case "$CMD" in
   precompact) cmd_precompact "$@" 2>/dev/null || true; exit 0 ;;
   guard)      cmd_guard 2>/dev/null || true; exit 0 ;;
   save)       cmd_save "$@" ;;
+  self-update) cmd_selfupdate ;;
   verify)     cmd_verify "$@" ;;
   compact)    cmd_compact "$@" ;;
   import)     cmd_import "$@" ;;
