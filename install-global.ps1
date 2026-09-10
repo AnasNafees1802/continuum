@@ -103,10 +103,33 @@ $agents = @(
 
 $snippet = Read-Text (Join-Path $Src 'adapters/global.md')
 
-Write-Host ""
-Write-Host "Continuum - global install (once for all agents)" -ForegroundColor Cyan
-Write-Host "  source: $Src"
-Write-Host ""
+function Show-Banner {
+    $bf = Join-Path $Src 'banner.txt'
+    $w = 80; try { $w = [int]$Host.UI.RawUI.WindowSize.Width } catch {}
+    Write-Host ''
+    if ((Test-Path $bf) -and $w -ge 94) {
+        foreach ($line in (Get-Content $bf)) {
+            $run = ''; $col = 'start'
+            foreach ($ch in $line.ToCharArray()) {
+                $c = if ('#%*'.IndexOf($ch) -ge 0) { 'Magenta' } elseif ('+='.IndexOf($ch) -ge 0) { 'Cyan' } else { '' }
+                if ($c -ne $col) {
+                    if ($run.Length) { if ($col -and $col -ne 'start') { Write-Host -NoNewline $run -ForegroundColor $col } else { Write-Host -NoNewline $run } }
+                    $run = ''; $col = $c
+                }
+                $run += $ch
+            }
+            if ($run.Length) { if ($col) { Write-Host -NoNewline $run -ForegroundColor $col } else { Write-Host -NoNewline $run } }
+            Write-Host ''
+        }
+    }
+    else { Write-Host '   C O N T I N U U M' -ForegroundColor Cyan }
+    $ver = try { (Get-Content (Join-Path $Src 'VERSION') -Raw).Trim() } catch { '' }
+    Write-Host ''
+    Write-Host '   One shared memory for every AI coding agent.' -ForegroundColor Gray
+    if ($ver) { Write-Host "   Global install  -  v$ver" -ForegroundColor DarkGray } else { Write-Host '   Global install' -ForegroundColor DarkGray }
+    Write-Host ''
+}
+Show-Banner
 
 # Shared helper CLI: install once, referenced by every agent's hooks.
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null

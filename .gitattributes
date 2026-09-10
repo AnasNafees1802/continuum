@@ -6,3 +6,5 @@
 *.md    text eol=lf
 *.json  text eol=lf
 LICENSE text eol=lf
+# ASCII banner must stay LF so the bash installer renders it cleanly
+banner.txt text eol=lf

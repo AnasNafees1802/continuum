@@ -94,10 +94,27 @@ AGENTS=(
   "Windsurf|$HOME_DIR/.codeium/windsurf|$HOME_DIR/.codeium/windsurf/memories/global_rules.md|windsurf|$HOME_DIR/.codeium/windsurf/hooks.json|0"
 )
 
-echo
-echo "Continuum - global install (once for all agents)"
-echo "  source: $SRC"
-echo
+show_banner() {
+  local bf="$SRC/banner.txt" w ver
+  w="${COLUMNS:-0}"; [ "$w" = "0" ] && w="$(tput cols 2>/dev/null || echo 80)"
+  echo
+  if [ -f "$bf" ] && [ "$w" -ge 94 ] 2>/dev/null; then
+    if [ -t 1 ]; then
+      local M C R; M=$'\033[95m'; C=$'\033[96m'; R=$'\033[0m'
+      sed -e "s/[#%*]\{1,\}/${M}&${R}/g" -e "s/[+=]\{1,\}/${C}&${R}/g" "$bf"
+    else
+      cat "$bf"
+    fi
+  else
+    echo "   C O N T I N U U M"
+  fi
+  echo
+  echo "   One shared memory for every AI coding agent."
+  ver="$(cat "$SRC/VERSION" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$ver" ] && echo "   Global install  -  v$ver" || echo "   Global install"
+  echo
+}
+show_banner
 
 # Shared helper CLI: install once, referenced by every agent's hooks.
 mkdir -p "$BIN_DIR"
