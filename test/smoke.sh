@@ -153,6 +153,78 @@ M16="$(bash "$CONT" memory)"
 if ! printf '%s' "$M16" | grep -q 'pnpm' && [ -z "$OUT16" ]
 then ok "forget: removes memory; empty store yields no injection"; else bad "forget/empty (out=[$OUT16])"; fi
 
+# 17. context: plain catch-up body (no hook JSON wrapper) shows the project STATE
+# (capture then grep: grep -q would SIGPIPE the long producer and flip the result under pipefail)
+CTX17="$(bash "$CONT" context)"
+if printf '%s' "$CTX17" | grep -q 'STATE.md'
+then ok "context: emits the plain catch-up body"; else bad "context body"; fi
+
+# 18. MCP server: speaks JSON-RPC over stdio - initialize, tools/list, tools/call, error path
+MCPIN='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"continuum_status","arguments":{}}}
+{"jsonrpc":"2.0","id":9,"method":"bogus/method"}'
+if printf '%s\n' "$MCPIN" | $PY "$SRC/bin/continuum-mcp.py" | $PY -c '
+import sys,json
+r={}
+for ln in sys.stdin:
+    ln=ln.strip()
+    if not ln: continue
+    m=json.loads(ln); r[m.get("id")]=m
+assert r[1]["result"]["serverInfo"]["name"]=="continuum", "init serverInfo"
+names=[t["name"] for t in r[2]["result"]["tools"]]
+assert "continuum_catchup" in names and "continuum_remember" in names, "tools/list"
+assert not r[3]["result"].get("isError"), "tools/call error"
+assert r[9]["error"]["code"]==-32601, "unknown-method error"
+'
+then ok "mcp: JSON-RPC initialize/tools/call/error over stdio"; else bad "mcp server"; fi
+
+# 19. register-mcp.py: adds mcpServers.continuum, PRESERVES existing keys, backs up, valid JSON
+REGF="$T/fake-claude.json"
+printf '%s\n' '{"numStartups":7,"mcpServers":{"engram":{"type":"stdio","command":"engram","args":[]}}}' > "$REGF"
+# (assert STRUCTURE, not exact path strings: git-bash MSYS rewrites POSIX-looking env paths for native python)
+CONT_FILE="$REGF" CONT_SRV="/x/continuum-mcp.py" CONT_PY="/usr/bin/python3" CONT_PYPRE="" $PY "$SRC/bin/register-mcp.py" >/dev/null 2>&1
+if $PY - "$REGF" <<'PY'
+import json,sys,os
+f=sys.argv[1]; d=json.load(open(f,encoding="utf-8"))
+assert d["numStartups"]==7, "clobbered an existing top-level key"
+assert "engram" in d["mcpServers"], "clobbered an existing server"
+c=d["mcpServers"]["continuum"]
+assert c["type"]=="stdio", "missing type"
+assert isinstance(c["command"], str) and c["command"], "empty command"
+assert isinstance(c["args"], list) and c["args"][-1].replace("\\","/").endswith("continuum-mcp.py"), "bad args"
+assert c["env"]=={}, "missing env"
+assert os.path.exists(f+".continuum.bak"), "no backup written"
+PY
+then ok "register-mcp: adds continuum, preserves keys, backs up"; else bad "register-mcp merge"; fi
+
+# 20. register-mcp.py tolerates a UTF-8 BOM (some editors/PowerShell add one) and does NOT wipe the config
+REGB="$T/bom-claude.json"
+printf '\xEF\xBB\xBF%s' '{"numStartups":9,"mcpServers":{"engram":{"type":"stdio","command":"engram","args":[]}}}' > "$REGB"
+CONT_FILE="$REGB" CONT_SRV="/x/continuum-mcp.py" CONT_PY="/usr/bin/python3" CONT_PYPRE="" $PY "$SRC/bin/register-mcp.py" >/dev/null 2>&1
+if $PY - "$REGB" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8-sig"))
+assert d["numStartups"]==9, "BOM'd config was wiped"
+assert "engram" in d["mcpServers"], "existing server lost"
+assert "continuum" in d["mcpServers"], "continuum not added"
+PY
+then ok "register-mcp: tolerates a BOM without wiping the config"; else bad "register-mcp BOM"; fi
+
+# 21. register-mcp.py handles Codex TOML: adds [mcp_servers.continuum], preserves other config, idempotent
+REGT="$T/codex.toml"
+printf '%s\n' 'model = "gpt-5"' '' '[mcp_servers.other]' 'command = "other"' 'args = []' > "$REGT"
+CONT_FILE="$REGT" CONT_SRV="/x/continuum-mcp.py" CONT_PY="/usr/bin/python3" CONT_PYPRE="" $PY "$SRC/bin/register-mcp.py" >/dev/null 2>&1
+CONT_FILE="$REGT" CONT_SRV="/x/continuum-mcp.py" CONT_PY="/usr/bin/python3" CONT_PYPRE="" $PY "$SRC/bin/register-mcp.py" >/dev/null 2>&1  # twice -> must not duplicate
+TC="$(cat "$REGT")"
+CN="$(grep -c '^\[mcp_servers.continuum\]' "$REGT")"
+if printf '%s' "$TC" | grep -q 'model = "gpt-5"' \
+   && printf '%s' "$TC" | grep -q '\[mcp_servers.other\]' \
+   && printf '%s' "$TC" | grep -q "^\[mcp_servers.continuum\]" \
+   && [ "$CN" = "1" ]
+then ok "register-mcp: Codex TOML merge preserves config, idempotent"; else bad "register-mcp TOML (count=$CN)"; fi
+
 echo
 echo "Result: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ]

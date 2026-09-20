@@ -3,6 +3,40 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-09-20
+
+Continuum now serves its context over MCP. Any MCP client (Cursor, Windsurf, Copilot, Claude Code,
+Codex) can read the ledger and global memory, and call remember/recall/status/import/save, with no
+account and no cloud. A local-first answer to hosted context tools.
+
+### Added
+- **MCP server (`bin/continuum-mcp.py`).** Zero-dependency Python stdlib server speaking MCP over
+  stdio (newline-delimited JSON-RPC 2.0). Exposes 7 tools (catchup, status, remember, recall, forget,
+  import, save) and 5 resources (STATE, JOURNAL, TASKS, DECISIONS, global memory). Fail-safe: a
+  malformed message is answered with a JSON-RPC error and the loop keeps running, never crashing the client.
+- **`context` command** on both helpers: the plain catch-up body (global memory + project ledger) with
+  no hook wrapper and no side effects. One source of truth reused by the MCP server, and handy to run by hand.
+- **Installer MCP registration (five clients, JSON + TOML).** Global installers copy the server to
+  `~/.continuum/bin` and register it for **Claude Code** (`~/.claude.json`, user scope so it appears in
+  `/mcp`), **Codex** (`~/.codex/config.toml`), **Cursor**, **Windsurf**, and **Gemini**. The launch
+  command uses an absolute Python path (a GUI client may not share the shell PATH). A project
+  `.mcp.json` snippet is documented for anything else; this repo ships its own.
+- **Safe registration (`bin/register-mcp.py`).** One shared helper does the merge for both installers
+  and both config shapes — JSON (top-level `mcpServers`) and Codex TOML (`[mcp_servers.continuum]`,
+  merged by text with literal strings so Windows paths need no escaping). It preserves every existing
+  key/section, tolerates a UTF-8 BOM, backs the file up to `<file>.continuum.bak`, writes atomically,
+  and **fails closed** — it refuses to overwrite a config it cannot parse rather than risk wiping it.
+  (Replaces per-installer JSON editing that could truncate a large config like `~/.claude.json`.)
+- **Coverage, stated honestly.** Claude/Codex/Cursor/Windsurf/Gemini get MCP + native hooks;
+  Antigravity gets the `AGENTS.md` honor-protocol (MCP if it reads `settings.json`); ChatGPT's
+  connectors are remote-HTTP only, so it is reached via `AGENTS.md` / web bundles, not a local server.
+- **Smoke coverage** for `context`, the MCP server (initialize / tools/list / tools/call / error path),
+  and registration (JSON key preservation, BOM tolerance, and Codex TOML merge + idempotency). Now 23 tests.
+
+### Why
+MCP is how hosted context tools reach every agent from a single config block. Continuum now matches
+that reach, locally and free, on top of the cross-agent continuity and global memory it already had.
+
 ## [2.2.2] — 2026-09-09
 
 Fixes and a reinforcement gap, all found by heavy real-world use.

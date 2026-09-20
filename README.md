@@ -72,6 +72,40 @@ your-project/
 
 Any agent that reads one of those files participates automatically.
 
+## Works over MCP too
+
+Beyond native hooks, Continuum ships a **local MCP server** (`bin/continuum-mcp.py`, Python stdlib,
+zero dependencies). Any MCP client — Cursor, Windsurf, Copilot, Claude Code, Codex — can pull the
+project context and your global memory, and call tools directly: `continuum_catchup`,
+`continuum_status`, `continuum_remember`, `continuum_recall`, `continuum_forget`, `continuum_import`,
+`continuum_save`. Plus five read resources: STATE, JOURNAL, TASKS, DECISIONS, and global memory.
+
+The global installer registers it automatically for **Claude Code** (user scope, so it shows in
+`/mcp`), **Codex** (its `config.toml`), **Cursor**, **Windsurf**, and **Gemini**. Registration is
+safe: it preserves every other key in your config, tolerates a byte-order mark, backs the file up
+first, writes atomically, and refuses to touch a config it cannot parse. For any other MCP client,
+add one block:
+
+```json
+{
+  "mcpServers": {
+    "continuum": {
+      "command": "python",
+      "args": ["~/.continuum/bin/continuum-mcp.py"]
+    }
+  }
+}
+```
+
+No account, no cloud, no per-seat fee. The server is a thin adapter over the same helper the hooks use,
+so hooks and MCP always agree.
+
+**Coverage, stated honestly:** Claude Code, Codex, Cursor, Windsurf, and Gemini run local stdio MCP
+servers, so they get Continuum over MCP *and* via native hooks / `AGENTS.md`. Antigravity shares the
+`~/.gemini` config and gets the `AGENTS.md` honor-protocol (plus MCP if it reads `settings.json`).
+ChatGPT's connectors are remote-HTTP only and cannot launch a local server, so Continuum reaches it
+through `AGENTS.md` and web bundles rather than MCP. One ledger, reached whichever way each tool allows.
+
 ## 🧠 Global memory — tell one agent, every agent remembers
 
 Continuum carries the **project**; it also carries **you**. Alongside the per-project ledger, it keeps a

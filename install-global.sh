@@ -79,6 +79,23 @@ PY
   fi
 }
 
+# Resolve an ABSOLUTE python for the MCP launch command (a GUI client may not share the shell PATH).
+MCP_PYEXE=""; MCP_PYPRE=""
+for c in python3 python; do MCP_PYEXE="$(command -v "$c" 2>/dev/null)"; [ -n "$MCP_PYEXE" ] && break; done
+if [ -z "$MCP_PYEXE" ] && command -v py >/dev/null 2>&1; then MCP_PYEXE="$(command -v py)"; MCP_PYPRE="-3"; fi
+[ -z "$MCP_PYEXE" ] && MCP_PYEXE="python3"
+
+# Register the Continuum MCP server in a client config (servers live under a top-level "mcpServers"
+# object in every supported client). The JSON merge is in bin/register-mcp.py: atomic + backup + any depth.
+register_mcp() {
+  local file="$1"
+  have_py || { echo "      ! install Python to auto-register the MCP server (protocol still works via the instruction file)."; return 0; }
+  if CONT_FILE="$file" CONT_SRV="$BIN_DIR/continuum-mcp.py" CONT_PY="$MCP_PYEXE" CONT_PYPRE="$MCP_PYPRE" \
+       $PY_BIN "$SRC/bin/register-mcp.py" >/dev/null 2>&1
+  then echo "      MCP server registered -> $file"
+  else echo "      ! could not register MCP server -> $file"; fi
+}
+
 NESTED_FULL='[{"e":"SessionStart","m":"startup|resume|clear","a":"catch-up --event SessionStart"},{"e":"PreCompact","m":"manual|auto","a":"precompact --event PreCompact"},{"e":"Stop","m":"","a":"guard"}]'
 GEMINI_DEFS='[{"e":"SessionStart","m":"startup|resume|clear","a":"catch-up --event SessionStart"},{"e":"PreCompress","m":"auto|manual","a":"precompact --event PreCompress"}]'
 CURSOR_DEFS='[{"e":"sessionStart","a":"catch-up --event sessionStart"},{"e":"preCompact","a":"precompact --event preCompact"},{"e":"stop","a":"guard"}]'
@@ -119,6 +136,7 @@ show_banner
 # Shared helper CLI: install once, referenced by every agent's hooks.
 mkdir -p "$BIN_DIR"
 cp "$SRC/bin/continuum.sh" "$BIN_SH"; cp "$SRC/bin/continuum.ps1" "$BIN_PS1"; chmod +x "$BIN_SH" 2>/dev/null || true
+cp "$SRC/bin/continuum-mcp.py" "$BIN_DIR/continuum-mcp.py" 2>/dev/null || true   # MCP server (any MCP client)
 [ -f "$SRC/VERSION" ] && cp "$SRC/VERSION" "$BIN_DIR/VERSION"
 # Shim so a bare `continuum` works in any POSIX shell (bin dir is added to PATH below).
 printf '#!/usr/bin/env bash\nexec bash "%s" "$@"\n' "$BIN_SH" > "$BIN_DIR/continuum"; chmod +x "$BIN_DIR/continuum" 2>/dev/null || true
@@ -153,6 +171,21 @@ for entry in "${AGENTS[@]}"; do
     windsurf) merge_hooks "$hook" windsurf "$WINDSURF_DEFS" ;;
     none)     : ;;
   esac
+done
+
+# MCP server: register with every client whose servers live under a top-level "mcpServers" object -
+# Claude Code (~/.claude.json, USER scope so it shows in /mcp), Cursor, Windsurf, Gemini. This is
+# additive to the hooks (gives on-demand tools/resources); Codex uses TOML config and is covered by hooks.
+echo
+echo "  MCP server (Continuum context/memory over MCP — for any MCP client):"
+for m in \
+  "Claude Code|$HOME_DIR/.claude|$HOME_DIR/.claude.json" \
+  "Codex|$HOME_DIR/.codex|$HOME_DIR/.codex/config.toml" \
+  "Cursor|$HOME_DIR/.cursor|$HOME_DIR/.cursor/mcp.json" \
+  "Windsurf|$HOME_DIR/.codeium/windsurf|$HOME_DIR/.codeium/windsurf/mcp_config.json" \
+  "Gemini CLI|$HOME_DIR/.gemini|$HOME_DIR/.gemini/settings.json"; do
+  IFS='|' read -r mn md mf <<< "$m"
+  if [ -d "$md" ] || [ "$ALL" = "1" ]; then printf '  + %-12s\n' "$mn"; register_mcp "$mf"; else printf '  - %-12s skipped (not detected; ALL=1 to force)\n' "$mn"; fi
 done
 
 echo

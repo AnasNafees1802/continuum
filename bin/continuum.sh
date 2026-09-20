@@ -652,6 +652,18 @@ cmd_memory() {
   [ "$n" = "0" ] && echo "  (none yet - add: continuum remember \"...\")"
 }
 
+# context: the plain catch-up body (global memory + project ledger view), with NO hook JSON wrapper,
+# NO stdin, NO session marker, NO auto-update. Single source of truth for the MCP server + manual use.
+cmd_context() {
+  local mblock; mblock="$(build_memory_block)"
+  [ -n "$mblock" ] && printf '%s\n\n' "$mblock"
+  if [ -n "$ROOT" ]; then
+    build_catchup_body
+  elif [ -z "$mblock" ]; then
+    echo "continuum: no .aicontext/ ledger here and no global memory yet."
+  fi
+}
+
 # Print the header comment block (from line 2 to the first non-comment line), stripped of '# '.
 usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; }
 
@@ -688,6 +700,7 @@ case "$CMD" in
   compact)    cmd_compact "$@" ;;
   import)     cmd_import "$@" ;;
   status)     cmd_status ;;
+  context)    cmd_context ;;
   doctor)     cmd_doctor ;;
   remember)   cmd_remember "$@" ;;
   forget)     cmd_forget "$@" ;;

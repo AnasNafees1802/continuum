@@ -573,7 +573,17 @@ function Cmd-Memory {
   if ($n -eq 0) { Write-Output '  (none yet - add: continuum remember "...")' }
 }
 
-function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status doctor remember forget memory' }
+# context: the plain catch-up body (global memory + project ledger view), with NO hook JSON wrapper,
+# NO stdin, NO session marker, NO auto-update. Single source of truth for the MCP server + manual use.
+function Cmd-Context {
+  param($r)
+  $mblock = Build-MemoryBlock
+  if ($mblock) { Write-Output $mblock; Write-Output '' }
+  if ($r) { Write-Output (Build-CatchupBody $r) }
+  elseif (-not $mblock) { Write-Output 'continuum: no .aicontext/ ledger here and no global memory yet.' }
+}
+
+function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status context doctor remember forget memory' }
 
 # --- dispatch --------------------------------------------------------------
 $script:CurTranscript = Stdin-Transcript
@@ -595,6 +605,7 @@ switch ($Command) {
   'compact' { Cmd-Compact $ROOT $false }
   'import' { Cmd-Import $ROOT }
   'status' { Cmd-Status $ROOT }
+  'context' { Cmd-Context $ROOT }
   'doctor' { Cmd-Doctor $ROOT }
   'remember' { Cmd-Remember }
   'forget' { Cmd-Forget }

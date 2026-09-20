@@ -75,6 +75,30 @@ function Wire-Windsurf($file, $defs) { # Windsurf: {hooks:{event:[{command,power
     Ensure-Dir $file; Write-Text $file ($s | ConvertTo-Json -Depth 20)
 }
 
+# Resolve an absolute python for the MCP launch command (a GUI client may not share the shell PATH).
+$McpPyExe = 'python'; $McpPyPre = ''
+$pc = Get-Command python -ErrorAction SilentlyContinue
+if ($pc) { $McpPyExe = $pc.Source } else {
+    $pl = Get-Command py -ErrorAction SilentlyContinue
+    if ($pl) { $McpPyExe = $pl.Source; $McpPyPre = '-3' }
+}
+# Register the Continuum MCP server in a client config (servers live under a top-level "mcpServers"
+# object in every supported client). The JSON merge runs in bin/register-mcp.py via python so a big
+# config like ~/.claude.json is preserved at any depth (ConvertTo-Json could truncate and corrupt it).
+function Register-Mcp($file) {
+    $reg = Join-Path $Src 'bin/register-mcp.py'
+    $env:CONT_FILE = $file; $env:CONT_SRV = (Join-Path $BinDir 'continuum-mcp.py'); $env:CONT_PY = $McpPyExe; $env:CONT_PYPRE = $McpPyPre
+    $ok = $false
+    try {
+        $pyArgs = @(); if ($McpPyPre) { $pyArgs += $McpPyPre }; $pyArgs += $reg
+        & $McpPyExe @pyArgs 2>$null | Out-Null
+        $ok = ($LASTEXITCODE -eq 0)
+    }
+    catch { $ok = $false }
+    Remove-Item Env:CONT_FILE, Env:CONT_SRV, Env:CONT_PY, Env:CONT_PYPRE -ErrorAction SilentlyContinue
+    return $ok
+}
+
 $NestedFull = @(
     @{ e = 'SessionStart'; m = 'startup|resume|clear'; a = 'catch-up --event SessionStart' },
     @{ e = 'PreCompact'; m = 'manual|auto'; a = 'precompact --event PreCompact' },
@@ -135,6 +159,7 @@ Show-Banner
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.ps1') -Destination $BinDir -Force
 Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.sh') -Destination $BinDir -Force
+Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum-mcp.py') -Destination $BinDir -Force   # MCP server (any MCP client)
 if (Test-Path (Join-Path $Src 'VERSION')) { Copy-Item -LiteralPath (Join-Path $Src 'VERSION') -Destination $BinDir -Force }
 # Shims so a bare `continuum` works in cmd/PowerShell and Git Bash (the bin dir is added to PATH below).
 Write-Text (Join-Path $BinDir 'continuum.cmd') "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%~dp0continuum.ps1`" %*`r`n"
@@ -177,6 +202,26 @@ foreach ($a in $agents) {
         'windsurf' { Wire-Windsurf $a.hook $a.defs; Write-Host ("      hooks wired -> " + $a.hook.Replace($Home_, '~') + " (per-turn: no session hook)") -ForegroundColor DarkGray }
         default { }
     }
+}
+
+# MCP server: register with every client whose servers live under a top-level "mcpServers" object -
+# Claude Code (~/.claude.json, USER scope so it shows in /mcp), Cursor, Windsurf, Gemini. Additive to
+# the hooks (adds on-demand tools/resources); Codex uses TOML config and is covered by its hooks.
+Write-Host ""
+Write-Host "  MCP server (Continuum context/memory over MCP - for any MCP client):" -ForegroundColor Green
+$mcpTargets = @(
+    @{ name = 'Claude Code'; dir = Join-Path $Home_ '.claude'; file = Join-Path $Home_ '.claude.json' }
+    @{ name = 'Codex'; dir = Join-Path $Home_ '.codex'; file = Join-Path $Home_ '.codex\config.toml' }
+    @{ name = 'Cursor'; dir = Join-Path $Home_ '.cursor'; file = Join-Path $Home_ '.cursor\mcp.json' }
+    @{ name = 'Windsurf'; dir = Join-Path $Home_ '.codeium\windsurf'; file = Join-Path $Home_ '.codeium\windsurf\mcp_config.json' }
+    @{ name = 'Gemini CLI'; dir = Join-Path $Home_ '.gemini'; file = Join-Path $Home_ '.gemini\settings.json' }
+)
+foreach ($m in $mcpTargets) {
+    if ((Test-Path -LiteralPath $m.dir) -or $All) {
+        if (Register-Mcp $m.file) { Write-Host ("  + {0,-12} MCP registered -> {1}" -f $m.name, $m.file.Replace($Home_, '~')) -ForegroundColor DarkGray }
+        else { Write-Host ("  ! {0,-12} MCP registration needs Python on PATH" -f $m.name) -ForegroundColor Yellow }
+    }
+    else { Write-Host ("  - {0,-12} skipped (not detected; use -All to force)" -f $m.name) -ForegroundColor DarkGray }
 }
 
 Write-Host ""
