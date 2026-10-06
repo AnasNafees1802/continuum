@@ -35,40 +35,43 @@ merge_hooks() {
   mkdir -p "$(dirname "$settings")"
   if have_py; then
     CONT_SETTINGS="$settings" CONT_SCRIPT="$script" $PY_BIN - <<'PY'
-import json, os
+import json, os, shutil
 p = os.environ["CONT_SETTINGS"]; sc = os.environ["CONT_SCRIPT"]
-try:
-    with open(p) as fh: d = json.load(fh)
-except Exception:
+if os.path.exists(p):
+    with open(p, encoding="utf-8-sig") as fh: d = json.load(fh)
+else:
     d = {}
-if not isinstance(d, dict): d = {}
+if not isinstance(d, dict): raise ValueError("settings must be an object")
+if "hooks" in d and not isinstance(d["hooks"], dict): raise ValueError("hooks must be an object")
 hooks = d.setdefault("hooks", {})
 for event, matcher, sub in [("SessionStart", "startup|resume|clear", "catch-up"),
                             ("PreCompact", "manual|auto", "precompact"),
                             ("Stop", "", "guard")]:
     cmd = 'bash "%s" %s' % (sc, sub)
-    kept = [g for g in hooks.get(event, [])
-            if not any(t in " ".join(h.get("command", "") for h in g.get("hooks", [])) for t in ("continuum.ps1", "continuum.sh"))]
+    groups = hooks.get(event, [])
+    if not isinstance(groups, list): raise ValueError("hook event must be an array")
+    kept = []
+    for g in groups:
+        if not isinstance(g, dict) or not isinstance(g.get("hooks"), list):
+            raise ValueError("nested hook group must contain an array")
+        children = g["hooks"]
+        if any(not isinstance(h, dict) for h in children): raise ValueError("hook must be an object")
+        remaining = [h for h in children if not any(t in str(h.get("command", "")) for t in ("continuum.ps1", "continuum.sh"))]
+        if remaining or not children: kept.append(dict(g, hooks=remaining))
     kept.append({"matcher": matcher, "hooks": [{"type": "command", "command": cmd}]})
     hooks[event] = kept
-with open(p, "w") as fh:
-    json.dump(d, fh, indent=2); fh.write("\n")
+if os.path.exists(p): shutil.copy2(p, p + ".continuum.bak")
+tmp = p + ".tmp." + str(os.getpid())
+try:
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=2); fh.write("\n")
+    os.replace(tmp, p)
+finally:
+    if os.path.exists(tmp): os.unlink(tmp)
 print("  wired SessionStart/PreCompact/Stop hooks -> %s" % p)
 PY
-  elif command -v jq >/dev/null 2>&1; then
-    [ -f "$settings" ] || echo '{}' > "$settings"
-    local ev m sub cmd
-    for spec in "SessionStart|startup|resume|clear|catch-up" "PreCompact|manual|auto|precompact" "Stop||guard"; do
-      ev="${spec%%|*}"; rest="${spec#*|}"; sub="${rest##*|}"; m="${rest%|*}"
-      cmd="bash \"$script\" $sub"
-      jq --arg ev "$ev" --arg m "$m" --arg cmd "$cmd" '
-        .hooks[$ev] = (((.hooks[$ev] // []) | map(select([.hooks[]?.command] | any(. != null and (contains("continuum"))) | not)))
-                       + [{matcher:$m, hooks:[{type:"command", command:$cmd}]}])' \
-        "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
-    done
-    echo "  wired SessionStart/PreCompact/Stop hooks -> $settings"
   else
-    echo "  ! install Python or jq to auto-wire hooks (skill/protocol still works without them)."
+    echo "  ! install Python to auto-wire hooks (skill/protocol still works without them)."
   fi
 }
 

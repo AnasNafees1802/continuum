@@ -51,27 +51,46 @@ merge_hooks() {
   mkdir -p "$(dirname "$file")"
   if have_py; then
     CONT_FILE="$file" CONT_FMT="$fmt" CONT_SH="$BIN_SH" CONT_PS="$BIN_PS1" CONT_DEFS="$defs" $PY_BIN - <<'PY'
-import json, os
+import json, os, shutil
 f=os.environ["CONT_FILE"]; fmt=os.environ["CONT_FMT"]; sh=os.environ["CONT_SH"]; ps=os.environ["CONT_PS"]
 defs=json.loads(os.environ["CONT_DEFS"])
-try:
-    with open(f) as fh: d=json.load(fh)
-except Exception:
+if os.path.exists(f):
+    with open(f, encoding="utf-8-sig") as fh: d=json.load(fh)
+else:
     d={}
-if not isinstance(d, dict): d={}
+if not isinstance(d, dict): raise ValueError("settings must be an object")
+if "hooks" in d and not isinstance(d["hooks"], dict): raise ValueError("hooks must be an object")
 hooks=d.setdefault("hooks", {})
 def cmdsh(a): return 'bash "%s" %s' % (sh, a)
 def cmdps(a): return 'powershell -ExecutionPolicy Bypass -File "%s" %s' % (ps, a)
 if fmt=="cursor": d["version"]=1
 for spec in defs:
     e=spec["e"]; a=spec["a"]; m=spec.get("m","")
-    kept=[g for g in hooks.get(e, []) if not any(t in json.dumps(g) for t in ("continuum.ps1","continuum.sh"))]
+    groups = hooks.get(e, [])
+    if not isinstance(groups, list): raise ValueError("hook event must be an array")
+    kept = []
+    for g in groups:
+        if not isinstance(g, dict): raise ValueError("hook entry must be an object")
+        if "hooks" in g:
+            children = g["hooks"]
+            if not isinstance(children, list) or any(not isinstance(h, dict) for h in children):
+                raise ValueError("nested hooks must be an array of objects")
+            remaining = [h for h in children if not any(t in str(h.get("command", "")) for t in ("continuum.ps1", "continuum.sh"))]
+            if remaining or not children: kept.append(dict(g, hooks=remaining))
+        elif not any(t in str(g.get("command", "")) for t in ("continuum.ps1", "continuum.sh")):
+            kept.append(g)
     if fmt=="cursor":     entry={"command":cmdsh(a), "type":"command"}
     elif fmt=="windsurf": entry={"command":cmdsh(a), "powershell":cmdps(a)}
     else:                 entry={"matcher":m, "hooks":[{"type":"command","command":cmdsh(a)}]}
     kept.append(entry); hooks[e]=kept
-with open(f, "w") as fh:
-    json.dump(d, fh, indent=2); fh.write("\n")
+if os.path.exists(f): shutil.copy2(f, f + ".continuum.bak")
+tmp = f + ".tmp." + str(os.getpid())
+try:
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=2); fh.write("\n")
+    os.replace(tmp, f)
+finally:
+    if os.path.exists(tmp): os.unlink(tmp)
 print("      hooks wired -> %s" % f)
 PY
   else
@@ -81,8 +100,7 @@ PY
 
 # Resolve an ABSOLUTE python for the MCP launch command (a GUI client may not share the shell PATH).
 MCP_PYEXE=""; MCP_PYPRE=""
-for c in python3 python; do MCP_PYEXE="$(command -v "$c" 2>/dev/null)"; [ -n "$MCP_PYEXE" ] && break; done
-if [ -z "$MCP_PYEXE" ] && command -v py >/dev/null 2>&1; then MCP_PYEXE="$(command -v py)"; MCP_PYPRE="-3"; fi
+if have_py; then MCP_PYEXE="$($PY_BIN -c 'import sys; print(sys.executable)')"; fi
 [ -z "$MCP_PYEXE" ] && MCP_PYEXE="python3"
 
 # Register the Continuum MCP server in a client config (servers live under a top-level "mcpServers"
@@ -91,7 +109,7 @@ register_mcp() {
   local file="$1"
   have_py || { echo "      ! install Python to auto-register the MCP server (protocol still works via the instruction file)."; return 0; }
   if CONT_FILE="$file" CONT_SRV="$BIN_DIR/continuum-mcp.py" CONT_PY="$MCP_PYEXE" CONT_PYPRE="$MCP_PYPRE" \
-       $PY_BIN "$SRC/bin/register-mcp.py" >/dev/null 2>&1
+       $PY_BIN "$SRC/bin/register-mcp.py" >/dev/null
   then echo "      MCP server registered -> $file"
   else echo "      ! could not register MCP server -> $file"; fi
 }

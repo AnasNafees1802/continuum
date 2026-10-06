@@ -16,6 +16,12 @@ import sys, os, json, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 IS_WIN = os.name == "nt"
 PROTOCOL_VERSION = "2025-06-18"
+MAX_TEXT_BYTES = 1024 * 1024
+SPEC_NAMES = ("features", "data-models", "business-rules", "test-cases", "design-tokens")
+
+
+class ToolError(Exception):
+    """An expected failure the client must not mistake for success."""
 
 
 def version():
@@ -61,31 +67,44 @@ def helper_argv(args):
 
 
 def run_helper(args, timeout=45):
-    """Run a continuum command in the client's cwd; return combined text. Never raises."""
+    """Run the helper and preserve its failure status at the MCP boundary."""
     try:
         p = subprocess.run(
             helper_argv(args), cwd=os.getcwd(), capture_output=True, text=True,
             timeout=timeout, encoding="utf-8", errors="replace",
         )
         out = (p.stdout or "") + (p.stderr or "")
+        if p.returncode:
+            raise ToolError(out.strip() or "continuum: helper failed (exit %s)" % p.returncode)
         return out.strip() or "(no output)"
     except FileNotFoundError:
         runner = "powershell" if IS_WIN else "bash"
-        return "continuum: cannot run the helper - '%s' not found on PATH." % runner
+        raise ToolError("continuum: cannot run the helper - '%s' not found on PATH." % runner)
     except subprocess.TimeoutExpired:
-        return "continuum: helper timed out."
-    except Exception as e:  # fail-safe: a tool error is data, never a crash
-        return "continuum: error - %s" % e
+        raise ToolError("continuum: helper timed out.")
+    except OSError as e:
+        raise ToolError("continuum: error - %s" % e)
 
 
 def read_file(path):
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            return fh.read()
-    except FileNotFoundError:
-        return "(not found: %s)" % path
-    except Exception as e:
-        return "continuum: error reading %s - %s" % (path, e)
+        with open(path, "rb") as fh:
+            data = fh.read(MAX_TEXT_BYTES + 1)
+        if len(data) > MAX_TEXT_BYTES:
+            raise ToolError("continuum: file exceeds the 1 MiB resource limit")
+        return data.decode("utf-8-sig")
+    except (OSError, UnicodeError) as e:
+        raise ToolError("continuum: error reading %s - %s" % (path, e))
+
+
+def spec_file(root, name):
+    if name not in SPEC_NAMES: raise ToolError("continuum: unsupported spec name")
+    ledger = os.path.realpath(os.path.join(root, ".aicontext"))
+    base = os.path.realpath(os.path.join(ledger, "spec"))
+    path = os.path.realpath(os.path.join(base, name + ".md"))
+    if os.path.commonpath([ledger, base]) != ledger or os.path.commonpath([base, path]) != base:
+        raise ToolError("continuum: spec path escapes its directory")
+    return path
 
 
 # --- tools -----------------------------------------------------------------
@@ -119,6 +138,10 @@ TOOLS = [
      "description": "Stamp a handoff into manifest.json (lastUpdated/handoffAt/lastCommit/lastAgent) and rotate the journal. Call AFTER you have written STATE.md/JOURNAL.md, when ending or handing off. Side-effecting.",
      "inputSchema": {"type": "object",
                      "properties": {"agent": {"type": "string", "description": "Agent name to record (default: the MCP client)."}}}},
+    {"name": "continuum_spec",
+     "description": "Read the project's structured, agent-native context from .aicontext/spec/ (features, data models, business rules, test cases in Given/When/Then, design tokens). Call this BEFORE building a feature so you follow the project's real schema, rules, and design instead of guessing. Optionally fetch one file by name.",
+     "inputSchema": {"type": "object",
+                     "properties": {"name": {"type": "string", "enum": list(SPEC_NAMES), "description": "Optional: one of features, data-models, business-rules, test-cases, design-tokens. Omit for all."}}}},
 ]
 
 RESOURCES = [
@@ -132,11 +155,35 @@ RESOURCES = [
      "description": "Append-only technical/architectural decision log."},
     {"uri": "continuum://memory", "name": "Global memory", "rel": None,
      "description": "The user's durable cross-project preferences (machine-global, not per-project)."},
+    {"uri": "continuum://spec/features", "name": "Features", "rel": "spec/features.md",
+     "description": "Features and specs in plain language."},
+    {"uri": "continuum://spec/data-models", "name": "Data models", "rel": "spec/data-models.md",
+     "description": "Entities and fields, so agents don't guess the schema."},
+    {"uri": "continuum://spec/business-rules", "name": "Business rules", "rel": "spec/business-rules.md",
+     "description": "Logic agents must honor and tests must assert."},
+    {"uri": "continuum://spec/test-cases", "name": "Test cases", "rel": "spec/test-cases.md",
+     "description": "Given / When / Then acceptance criteria."},
+    {"uri": "continuum://spec/design-tokens", "name": "Design tokens", "rel": "spec/design-tokens.md",
+     "description": "Colors, typography, spacing for consistent UI."},
 ]
 
 
 def call_tool(name, args):
-    args = args or {}
+    definition = next((t for t in TOOLS if t["name"] == name), None)
+    if definition is None: raise ToolError("continuum: unknown tool %r" % name)
+    if args is None: args = {}
+    if not isinstance(args, dict): raise ToolError("continuum: arguments must be an object")
+    schema = definition["inputSchema"]
+    for key in schema.get("required", []):
+        if key not in args: raise ToolError("continuum: '%s' is required" % key)
+    for key, val in args.items():
+        if key not in schema["properties"] or not isinstance(val, str):
+            raise ToolError("continuum: invalid argument %r" % key)
+        if len(val) > 8192: raise ToolError("continuum: argument exceeds 8192 characters")
+        allowed = schema["properties"][key].get("enum")
+        if allowed is not None and val not in allowed: raise ToolError("continuum: unsupported value for %s" % key)
+    if name == "continuum_import" and args.get("from", "auto") not in ("auto", "git", "claude", "codex", "gemini"):
+        raise ToolError("continuum: unsupported import source")
     if name == "continuum_catchup":
         return run_helper(["context"])
     if name == "continuum_status":
@@ -144,7 +191,7 @@ def call_tool(name, args):
     if name == "continuum_remember":
         text = (args.get("text") or "").strip()
         if not text:
-            return "continuum: 'text' is required."
+            raise ToolError("continuum: 'text' is required.")
         argv = ["remember", text, "--source", "agent"]
         if args.get("scope"):
             argv += ["--scope", str(args["scope"])]
@@ -158,11 +205,23 @@ def call_tool(name, args):
         return out
     if name == "continuum_forget":
         q = (args.get("query") or "").strip()
-        return run_helper(["forget", q]) if q else "continuum: 'query' is required."
+        if not q: raise ToolError("continuum: 'query' is required.")
+        return run_helper(["forget", q])
     if name == "continuum_import":
         return run_helper(["import", "--from", str(args.get("from") or "auto")])
     if name == "continuum_save":
         return run_helper(["save", "--agent", str(args.get("agent") or "mcp-client")])
+    if name == "continuum_spec":
+        one = (args.get("name") or "").strip()
+        root = find_root()
+        if not root: raise ToolError("continuum: no .aicontext/ ledger found from %s" % os.getcwd())
+        if one:
+            return read_file(spec_file(root, one))
+        sections = []
+        for spec in SPEC_NAMES:
+            path = spec_file(root, spec)
+            if os.path.exists(path): sections.append("----- spec/%s.md -----\n%s" % (spec, read_file(path)))
+        return "\n\n".join(sections) or "continuum: no spec store yet. Create one: continuum spec init"
     return "continuum: unknown tool %r" % name
 
 
@@ -174,9 +233,11 @@ def read_resource(uri):
             return read_file(os.path.join(cont_home(), "memory", "MEMORY.md"))
         root = find_root()
         if not root:
-            return "continuum: no .aicontext/ ledger found from %s" % os.getcwd()
+            raise ToolError("continuum: no .aicontext/ ledger found from %s" % os.getcwd())
+        if r["rel"].startswith("spec/"):
+            return read_file(spec_file(root, r["rel"][5:-3]))
         return read_file(os.path.join(root, ".aicontext", r["rel"]))
-    return "continuum: unknown resource %r" % uri
+    raise ToolError("continuum: unknown resource %r" % uri)
 
 
 # --- JSON-RPC plumbing -----------------------------------------------------
@@ -194,14 +255,20 @@ def error(mid, code, message):
 
 
 def handle(req):
+    if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+        error(req.get("id") if isinstance(req, dict) else None, -32600, "Invalid Request")
+        return
     method = req.get("method")
     mid = req.get("id")
     is_request = "id" in req  # notifications have no id -> never respond
+    if not is_request: return
+    if "params" in req and not isinstance(req["params"], dict):
+        error(mid, -32602, "params must be an object")
+        return
 
     if method == "initialize":
-        client_pv = (req.get("params") or {}).get("protocolVersion") or PROTOCOL_VERSION
         result(mid, {
-            "protocolVersion": client_pv,
+            "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {"tools": {}, "resources": {}},
             "serverInfo": {"name": "continuum", "version": version()},
         })
@@ -213,22 +280,37 @@ def handle(req):
         result(mid, {"tools": TOOLS})
     elif method == "tools/call":
         params = req.get("params") or {}
-        text = call_tool(params.get("name"), params.get("arguments"))
-        result(mid, {"content": [{"type": "text", "text": text}], "isError": False})
+        try:
+            text = call_tool(params.get("name"), params.get("arguments"))
+            failed = False
+        except ToolError as exc:
+            text, failed = str(exc), True
+        result(mid, {"content": [{"type": "text", "text": text}], "isError": failed})
     elif method == "resources/list":
         result(mid, {"resources": [
             {"uri": r["uri"], "name": r["name"], "description": r["description"], "mimeType": "text/markdown"}
             for r in RESOURCES]})
     elif method == "resources/read":
         uri = (req.get("params") or {}).get("uri")
-        result(mid, {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": read_resource(uri)}]})
+        try:
+            text = read_resource(uri)
+            result(mid, {"contents": [{"uri": uri, "mimeType": "text/markdown", "text": text}]})
+        except ToolError as exc:
+            error(mid, -32002, str(exc))
     elif is_request:
         error(mid, -32601, "Method not found: %s" % method)
     # unknown notification: ignore
 
 
 def main():
-    for line in sys.stdin:
+    while True:
+        line = sys.stdin.readline(MAX_TEXT_BYTES + 1)
+        if not line: break
+        if len(line) > MAX_TEXT_BYTES:
+            while line and not line.endswith("\n"):
+                line = sys.stdin.readline(MAX_TEXT_BYTES + 1)
+            error(None, -32600, "Request exceeds 1 MiB character limit")
+            continue
         line = line.strip()
         if not line:
             continue

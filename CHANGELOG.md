@@ -3,6 +3,38 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-10-06
+
+### Reliability fixes
+- Preserve existing settings when JSON contains a UTF-8 BOM; refuse malformed configuration.
+- Preserve unrelated commands within mixed hook groups in global and project installers.
+- Validate TOML before/after MCP registration, support quoted table names and apostrophes in paths,
+  preserve custom server options, and fail closed on unsupported layouts.
+- Restrict MCP spec names and resolved paths, validate tool arguments, bound resource/request
+  sizes, and report helper/validation failures as errors.
+- Propagate failed PowerShell verification and `save --verify` exit status; reject corrupt saves.
+- Detect content edits to already-dirty and untracked files; recognize work after a handoff.
+- Serialize CLI memory/ledger writes across processes and fix prefix-based memory deduplication.
+- Bound each catch-up section with an explicit full-source pointer; reconstruction shows the
+  latest 12 prompts. Normalize hook session identifiers before using them as filenames.
+- Add isolated regression tests and Windows/Linux/macOS CI; fix BSD date/sed compatibility.
+
+Structured, agent-native project context: the local, versioned, no-account answer to hosted spec tools.
+
+### Added
+- **`.aicontext/spec/` store.** `continuum spec init` seeds five plain-markdown files you own and
+  version in git: `features.md`, `data-models.md`, `business-rules.md`, `test-cases.md` (Given/When/
+  Then), `design-tokens.md`. A store any producer writes into (you, an agent, or another tool), not a
+  second app to log into. `continuum spec` prints it; `continuum spec init` is idempotent (never
+  overwrites an existing file).
+- **Served over MCP.** New `continuum_spec` tool (all files, or one by name) plus `continuum://spec/*`
+  resources, so any MCP client reads your real schema, rules, tests, and design before building a
+  feature instead of guessing.
+- **Catch-up points to it, does not dump it.** When a spec store exists, the session brief adds a one-
+  line `SPEC:` pointer so the agent knows to pull it, keeping the briefing short (full retrieval stays
+  a deliberate, on-demand call — relevance ranking is the next step).
+- **Smoke coverage** for `spec` (init/print/catch-up pointer) and the `continuum_spec` MCP tool. Now 25 tests.
+
 ## [2.4.0] - 2026-09-20
 
 Continuum now serves its context over MCP. Any MCP client (Cursor, Windsurf, Copilot, Claude Code,

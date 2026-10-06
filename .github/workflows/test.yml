@@ -1,0 +1,31 @@
+name: Continuum checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CONTINUUM_NO_AUTOUPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Boundary and platform regressions
+        run: python test/regression.py
+      - name: End-to-end smoke checks
+        shell: bash
+        run: bash test/smoke.sh
+      - name: Shell syntax
+        shell: bash
+        run: |
+          for script in bin/continuum.sh install.sh install-global.sh bootstrap.sh test/smoke.sh; do
+            bash -n "$script"
+          done

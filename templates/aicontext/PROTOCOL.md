@@ -71,6 +71,16 @@ Windsurf rely on the universal git-based reconstruction.
 - Write for an agent who knows *nothing* about this session. Be concrete: file paths, command names, exact next step.
 - Keep it tight. This is a briefing, not a transcript. The agent's native history still holds the verbatim log.
 
+## Structured context — `.aicontext/spec/` (optional)
+For projects that want agent-native specs, run `continuum spec init` to seed `.aicontext/spec/`:
+`features.md`, `data-models.md`, `business-rules.md`, `test-cases.md` (Given/When/Then), and
+`design-tokens.md`. These are plain versioned markdown you (or an agent, or another tool) fill in, so
+an agent building a feature follows your real schema, rules, and design instead of guessing.
+- **Read it before building a feature:** run `continuum spec` or call the `continuum_spec` MCP tool
+  (also available as `continuum://spec/*` MCP resources). Catch-up only *points* to the store; it does
+  not dump it, so the briefing stays short.
+- Same rules as the rest of the ledger: plain, concrete, kept current. It is not a second task list.
+
 ## Why gitignored?
 `.aicontext/` is gitignored by default in this project — the memory is local to your machine and
 not pushed. The adapter files (`CLAUDE.md`, `AGENTS.md`, `.windsurfrules`) *are* committed so the
