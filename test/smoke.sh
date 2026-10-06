@@ -62,6 +62,8 @@ if echo "$G1" | grep -q '"decision":"block"' && [ -z "$G2" ]
 then ok "guard: nudges once, silent thereafter"; else bad "guard once ($G1 / $G2)"; fi
 
 # 4b. guard also nudges when you committed code but never logged a decision
+# Isolate this condition from the earlier save, even on sub-second CI runs.
+$PY -c "import json;p='.aicontext/manifest.json';d=json.load(open(p));d['continuum']['handoffAt']='2000-01-01T00:00:00Z';open(p,'w').write(json.dumps(d))"
 printf '{"session_id":"smoke2"}' | bash "$CONT" catch-up >/dev/null 2>&1
 $PY -c "import os,time;t=time.time();os.utime('.aicontext/STATE.md',(t+3600,)*2);os.utime('.aicontext/DECISIONS.md',(t-3600,)*2)"
 printf 'feat\n' > feat_b.txt; git add -A >/dev/null 2>&1; git commit -qm "smoke feat" >/dev/null 2>&1
