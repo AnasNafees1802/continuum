@@ -73,7 +73,7 @@ then ok "guard: nudges when commits made without a logged decision"; else bad "g
 printf '{"session_id":"smoke3"}' | bash "$CONT" catch-up >/dev/null 2>&1
 printf 'more\n' > feat_c.txt; git add -A >/dev/null 2>&1; git commit -qm "smoke c" >/dev/null 2>&1
 bash "$CONT" save --agent smoke >/dev/null 2>&1
-sed -i 's/^handoff=1/handoff=0/' .aicontext/.session/smoke3.env 2>/dev/null   # simulate a manual save that never stamped the marker
+sed -i.bak 's/^handoff=1/handoff=0/' .aicontext/.session/smoke3.env 2>/dev/null   # portable on BSD/GNU sed
 GC="$(printf '{"session_id":"smoke3","stop_hook_active":false}' | bash "$CONT" guard)"
 if [ -z "$GC" ]
 then ok "guard: silent after a save even if the marker wasn't stamped (no false nag)"; else bad "guard false-nag after save ($GC)"; fi
@@ -224,6 +224,32 @@ if printf '%s' "$TC" | grep -q 'model = "gpt-5"' \
    && printf '%s' "$TC" | grep -q "^\[mcp_servers.continuum\]" \
    && [ "$CN" = "1" ]
 then ok "register-mcp: Codex TOML merge preserves config, idempotent"; else bad "register-mcp TOML (count=$CN)"; fi
+
+# 22. spec: init seeds the store, print shows it, and catch-up points to it (without dumping it)
+bash "$CONT" spec init >/dev/null 2>&1
+SP="$(bash "$CONT" spec)"
+CTXS="$(printf '{"session_id":"sp1"}' | bash "$CONT" catch-up | ctx)"
+if [ -f "$T/.aicontext/spec/data-models.md" ] && [ -f "$T/.aicontext/spec/test-cases.md" ] \
+   && printf '%s' "$SP" | grep -q 'Data Models' \
+   && printf '%s' "$CTXS" | grep -q 'SPEC:' \
+   && ! printf '%s' "$CTXS" | grep -q 'BR1:'   # pointer only, not the full spec body
+then ok "spec: init + print + catch-up points to the store (not dumped)"; else bad "spec store"; fi
+
+# 23. MCP continuum_spec tool returns the structured context
+if printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"continuum_spec","arguments":{}}}' \
+  | $PY "$SRC/bin/continuum-mcp.py" | $PY -c '
+import sys,json
+r={}
+for ln in sys.stdin:
+    ln=ln.strip()
+    if not ln: continue
+    m=json.loads(ln); r[m.get("id")]=m
+t=r[2]["result"]["content"][0]["text"]
+assert "Data Models" in t or "Business Rules" in t, "spec tool returned no spec content"
+'
+then ok "mcp: continuum_spec returns the structured context"; else bad "mcp continuum_spec"; fi
 
 echo
 echo "Result: $PASS passed, $FAIL failed"

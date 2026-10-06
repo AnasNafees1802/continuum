@@ -32,8 +32,24 @@ $ProjectName = Split-Path -Leaf $Target
 # non-ASCII (emoji, em-dashes). Use .NET I/O with explicit UTF-8 for correct round-tripping.
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 function Read-Text($p) { [System.IO.File]::ReadAllText($p) }
-function Write-Text($p, $c) { [System.IO.File]::WriteAllText($p, $c, $Utf8) }
+function Write-Text($p, $c) {
+    $tmp = "$p.tmp.$PID"
+    try {
+        if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination "$p.continuum.bak" -Force }
+        [System.IO.File]::WriteAllText($tmp, $c, $Utf8)
+        Move-Item -LiteralPath $tmp -Destination $p -Force
+    } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } }
+}
 function Append-Text($p, $c) { [System.IO.File]::AppendAllText($p, $c, $Utf8) }
+function Settings-Json($value) {
+    function Check-Depth($node, [int]$depth) {
+        if ($depth -gt 90) { throw 'Settings nesting exceeds the safe serialization limit; file left unchanged' }
+        if ($node -is [pscustomobject]) { foreach ($property in $node.PSObject.Properties) { Check-Depth $property.Value ($depth + 1) } }
+        elseif ($node -is [array]) { foreach ($item in $node) { Check-Depth $item ($depth + 1) } }
+    }
+    Check-Depth $value 0
+    return ($value | ConvertTo-Json -Depth 100)
+}
 
 function Write-Step($msg) { Write-Host "  $msg" }
 function Ensure-Dir($p) { $d = Split-Path -Parent $p; if ($d -and -not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null } }
@@ -47,13 +63,15 @@ function Set-ContinuumHooks($settingsPath, $cmdBuilder) {
     Ensure-Dir $settingsPath
     $s = if (Test-Path -LiteralPath $settingsPath) {
         $raw = Read-Text $settingsPath
-        if ([string]::IsNullOrWhiteSpace($raw)) { [pscustomobject]@{} } else { $raw | ConvertFrom-Json }
+        $raw | ConvertFrom-Json
     }
     else { [pscustomobject]@{} }
-    if (-not ($s.PSObject.Properties.Name -contains 'hooks') -or -not $s.hooks) {
+    if ($s -isnot [pscustomobject]) { throw 'Settings must be a JSON object' }
+    if (-not ($s.PSObject.Properties.Name -contains 'hooks')) {
         $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
     }
     $hooks = $s.hooks
+    if ($hooks -isnot [pscustomobject]) { throw 'Hooks must be an object' }
     $defs = @(
         @{ event = 'SessionStart'; matcher = 'startup|resume|clear'; sub = 'catch-up' },
         @{ event = 'PreCompact'; matcher = 'manual|auto'; sub = 'precompact' },
@@ -63,16 +81,19 @@ function Set-ContinuumHooks($settingsPath, $cmdBuilder) {
         $entry = [pscustomobject]@{ matcher = $d.matcher; hooks = @([pscustomobject]@{ type = 'command'; command = (& $cmdBuilder $d.sub) }) }
         $kept = @()
         if ($hooks.PSObject.Properties.Name -contains $d.event) {
+            if ($hooks.($d.event) -isnot [array]) { throw 'Hook event must be an array' }
             foreach ($grp in @($hooks.($d.event))) {
-                $cmds = (@($grp.hooks) | ForEach-Object { $_.command }) -join ' '
-                if ($cmds -notmatch 'continuum\.(ps1|sh)') { $kept += $grp }
+                if ($grp.hooks -isnot [array]) { throw 'Nested hooks must be an array' }
+                foreach ($h in $grp.hooks) { if ($h -isnot [pscustomobject]) { throw 'Hook entry must be an object' } }
+                $children = @($grp.hooks | Where-Object { $_.command -notmatch 'continuum\.(ps1|sh)' })
+                if ($children.Count -gt 0 -or $grp.hooks.Count -eq 0) { $grp.hooks = $children; $kept += $grp }
             }
         }
         $arr = [object[]](@($kept) + $entry)
         if ($hooks.PSObject.Properties.Name -contains $d.event) { $hooks.($d.event) = $arr }
         else { $hooks | Add-Member -NotePropertyName $d.event -NotePropertyValue $arr -Force }
     }
-    Write-Text $settingsPath ($s | ConvertTo-Json -Depth 20)
+    Write-Text $settingsPath (Settings-Json $s)
 }
 
 # Inject (or refresh) the managed Continuum block in a file, idempotently.

@@ -20,8 +20,24 @@ $Home_ = if ($env:CONTINUUM_HOME) { $env:CONTINUUM_HOME } else { $HOME }
 
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 function Read-Text($p) { [System.IO.File]::ReadAllText($p) }
-function Write-Text($p, $c) { [System.IO.File]::WriteAllText($p, $c, $Utf8) }
+function Write-Text($p, $c) {
+    $tmp = "$p.tmp.$PID"
+    try {
+        if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination "$p.continuum.bak" -Force }
+        [System.IO.File]::WriteAllText($tmp, $c, $Utf8)
+        Move-Item -LiteralPath $tmp -Destination $p -Force
+    } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } }
+}
 function Append-Text($p, $c) { [System.IO.File]::AppendAllText($p, $c, $Utf8) }
+function Settings-Json($value) {
+    function Check-Depth($node, [int]$depth) {
+        if ($depth -gt 90) { throw 'Settings nesting exceeds the safe serialization limit; file left unchanged' }
+        if ($node -is [pscustomobject]) { foreach ($property in $node.PSObject.Properties) { Check-Depth $property.Value ($depth + 1) } }
+        elseif ($node -is [array]) { foreach ($item in $node) { Check-Depth $item ($depth + 1) } }
+    }
+    Check-Depth $value 0
+    return ($value | ConvertTo-Json -Depth 100)
+}
 function Ensure-Dir($p) { $d = Split-Path -Parent $p; if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null } }
 
 function Set-ManagedBlock($file, $snippet) {
@@ -44,43 +60,67 @@ function HookCmdSh($argstr) { "bash `"$BinSh`" $argstr" }
 
 # --- JSON hook writers (idempotent: strip our old entries, keep everyone else's) ---
 function Load-Json($file) {
-    if (Test-Path -LiteralPath $file) { $raw = Read-Text $file; if (-not [string]::IsNullOrWhiteSpace($raw)) { return ($raw | ConvertFrom-Json) } }
+    if (Test-Path -LiteralPath $file) {
+        $parsed = (Read-Text $file) | ConvertFrom-Json
+        if ($parsed -isnot [pscustomobject]) { throw 'Settings must be a JSON object' }
+        return $parsed
+    }
     return [pscustomobject]@{}
 }
 function Strip-Continuum($arr) {
     $kept = @()
-    foreach ($g in @($arr)) { if (($g | ConvertTo-Json -Depth 8 -Compress) -notmatch 'continuum\.(ps1|sh)') { $kept += $g } }
+    foreach ($g in @($arr)) {
+        if ($g -isnot [pscustomobject]) { throw 'Hook entry must be an object' }
+        if ($g.PSObject.Properties.Name -contains 'hooks') {
+            if ($g.hooks -isnot [array]) { throw 'Nested hooks must be an array' }
+            foreach ($h in $g.hooks) { if ($h -isnot [pscustomobject]) { throw 'Hook entry must be an object' } }
+            $children = @($g.hooks | Where-Object { $_.command -notmatch 'continuum\.(ps1|sh)' })
+            if ($children.Count -gt 0 -or $g.hooks.Count -eq 0) { $g.hooks = $children; $kept += $g }
+        } elseif ($g.command -notmatch 'continuum\.(ps1|sh)') { $kept += $g }
+    }
     return , $kept
 }
-function Ensure-Hooks($s) { if (-not ($s.PSObject.Properties.Name -contains 'hooks') -or -not $s.hooks) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force }; return $s }
+function Ensure-Hooks($s) {
+    if (-not ($s.PSObject.Properties.Name -contains 'hooks')) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
+    if ($s.hooks -isnot [pscustomobject]) { throw 'Hooks must be an object' }
+    return $s
+}
 function Put-Event($hooks, $event, $entry) {
-    $existing = @(); if ($hooks.PSObject.Properties.Name -contains $event) { $existing = @($hooks.$event) }
+    $existing = @(); if ($hooks.PSObject.Properties.Name -contains $event) {
+        if ($hooks.$event -isnot [array]) { throw 'Hook event must be an array' }
+        $existing = @($hooks.$event)
+    }
     $arr = [object[]]((Strip-Continuum $existing) + $entry)
     if ($hooks.PSObject.Properties.Name -contains $event) { $hooks.$event = $arr } else { $hooks | Add-Member -NotePropertyName $event -NotePropertyValue $arr -Force }
 }
 function Wire-Nested($file, $defs) {   # Claude / Codex / Gemini: {hooks:{Event:[{matcher,hooks:[{type,command}]}]}}
     $s = Ensure-Hooks (Load-Json $file)
     foreach ($d in $defs) { Put-Event $s.hooks $d.e ([pscustomobject]@{ matcher = $d.m; hooks = @([pscustomobject]@{ type = 'command'; command = (HookCmdPs $d.a) }) }) }
-    Ensure-Dir $file; Write-Text $file ($s | ConvertTo-Json -Depth 20)
+    Ensure-Dir $file; Write-Text $file (Settings-Json $s)
 }
 function Wire-Cursor($file, $defs) {   # Cursor: {version:1, hooks:{event:[{command,type}]}}
     $s = Ensure-Hooks (Load-Json $file)
     if ($s.PSObject.Properties.Name -contains 'version') { $s.version = 1 } else { $s | Add-Member version 1 -Force }
     foreach ($d in $defs) { Put-Event $s.hooks $d.e ([pscustomobject]@{ command = (HookCmdPs $d.a); type = 'command' }) }
-    Ensure-Dir $file; Write-Text $file ($s | ConvertTo-Json -Depth 20)
+    Ensure-Dir $file; Write-Text $file (Settings-Json $s)
 }
 function Wire-Windsurf($file, $defs) { # Windsurf: {hooks:{event:[{command,powershell}]}}
     $s = Ensure-Hooks (Load-Json $file)
     foreach ($d in $defs) { Put-Event $s.hooks $d.e ([pscustomobject]@{ command = (HookCmdSh $d.a); powershell = (HookCmdPs $d.a) }) }
-    Ensure-Dir $file; Write-Text $file ($s | ConvertTo-Json -Depth 20)
+    Ensure-Dir $file; Write-Text $file (Settings-Json $s)
 }
 
 # Resolve an absolute python for the MCP launch command (a GUI client may not share the shell PATH).
 $McpPyExe = 'python'; $McpPyPre = ''
-$pc = Get-Command python -ErrorAction SilentlyContinue
-if ($pc) { $McpPyExe = $pc.Source } else {
-    $pl = Get-Command py -ErrorAction SilentlyContinue
-    if ($pl) { $McpPyExe = $pl.Source; $McpPyPre = '-3' }
+foreach ($candidate in @('python', 'python3', 'py')) {
+    $pc = Get-Command $candidate -ErrorAction SilentlyContinue
+    if (-not $pc) { continue }
+    try {
+        $probeArgs = @('-c', 'import sys; print(sys.executable)')
+        if ($candidate -eq 'py') { $probeArgs = @('-3') + $probeArgs }
+        $resolved = & $pc.Source @probeArgs 2>$null
+        if ($LASTEXITCODE -eq 0 -and $resolved) { $McpPyExe = [string]$resolved; break }
+    } catch { Write-Verbose "Python candidate unavailable: $candidate" }
 }
 # Register the Continuum MCP server in a client config (servers live under a top-level "mcpServers"
 # object in every supported client). The JSON merge runs in bin/register-mcp.py via python so a big
@@ -91,10 +131,10 @@ function Register-Mcp($file) {
     $ok = $false
     try {
         $pyArgs = @(); if ($McpPyPre) { $pyArgs += $McpPyPre }; $pyArgs += $reg
-        & $McpPyExe @pyArgs 2>$null | Out-Null
+        & $McpPyExe @pyArgs | Out-Null
         $ok = ($LASTEXITCODE -eq 0)
     }
-    catch { $ok = $false }
+    catch { Write-Warning $_.Exception.Message; $ok = $false }
     Remove-Item Env:CONT_FILE, Env:CONT_SRV, Env:CONT_PY, Env:CONT_PYPRE -ErrorAction SilentlyContinue
     return $ok
 }
@@ -219,7 +259,7 @@ $mcpTargets = @(
 foreach ($m in $mcpTargets) {
     if ((Test-Path -LiteralPath $m.dir) -or $All) {
         if (Register-Mcp $m.file) { Write-Host ("  + {0,-12} MCP registered -> {1}" -f $m.name, $m.file.Replace($Home_, '~')) -ForegroundColor DarkGray }
-        else { Write-Host ("  ! {0,-12} MCP registration needs Python on PATH" -f $m.name) -ForegroundColor Yellow }
+        else { Write-Host ("  ! {0,-12} MCP registration failed; see the diagnostic above. Existing configuration was preserved." -f $m.name) -ForegroundColor Yellow }
     }
     else { Write-Host ("  - {0,-12} skipped (not detected; use -All to force)" -f $m.name) -ForegroundColor DarkGray }
 }

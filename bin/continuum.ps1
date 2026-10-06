@@ -21,6 +21,7 @@ param(
   [Parameter(ValueFromRemainingArguments = $true)] [string[]] $Rest
 )
 $ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
 # --- arg helpers -----------------------------------------------------------
 function Arg-Val($name, $default) { for ($i = 0; $i -lt $Rest.Count; $i++) { if ($Rest[$i] -eq $name -and $i + 1 -lt $Rest.Count) { return $Rest[$i + 1] } }; return $default }
@@ -42,11 +43,38 @@ function Now-Iso { Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz' }
 function Now-Epoch { [int64]([datetimeoffset]::UtcNow).ToUnixTimeSeconds() }
 # Exact way to invoke THIS helper on this machine (the hook runs it by absolute path; 'continuum' is not on PATH).
 function Self-Cmd { 'powershell -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"' }
-function Git-Sha { param($r) (& git -C $r rev-parse HEAD 2>$null) }
-function Git-Branch { param($r) (& git -C $r rev-parse --abbrev-ref HEAD 2>$null) }
+function Git-Sha { param($r) try { (& git -C $r rev-parse --verify HEAD 2>$null) } catch { return '' } }
+function Git-Branch { param($r) try { (& git -C $r rev-parse --abbrev-ref HEAD 2>$null) } catch { return '' } }
 function Stable-Hash { param([string]$s) if (-not $s) { return '0' }; $md5 = [System.Security.Cryptography.MD5]::Create(); ($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($s)) | ForEach-Object { $_.ToString('x2') }) -join '' }
 function Sha256-Hex { param([string]$s) $h = [System.Security.Cryptography.SHA256]::Create(); ($h.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($s)) | ForEach-Object { $_.ToString('x2') }) -join '' }
-function Git-DirtySum { param($r) Stable-Hash ((& git -C $r status --porcelain 2>$null | Out-String)) }
+function Git-Text {
+  param($r, [string[]]$gitArgs)
+  # Windows PowerShell turns native stderr into an exception under Stop, even on exit 0.
+  # Git's exit code, not advisory messages (e.g. autocrlf), decides whether the read failed.
+  $ErrorActionPreference = 'Continue'
+  $text = (& git -C $r @gitArgs 2>$null | Out-String)
+  if ($LASTEXITCODE -ne 0) { throw "continuum: git $($gitArgs[0]) failed (exit $LASTEXITCODE)" }
+  return $text
+}
+function Git-DirtySum {
+  param($r)
+  # Status alone misses new edits to a file that was already dirty at catch-up.
+  if (-not (Git-Sha $r)) { return '' }
+  $parts = @((Git-Text $r @('status', '--porcelain', '--', '.', ':(exclude).aicontext')),
+    (Git-Text $r @('diff', '--no-ext-diff', '--no-textconv', '--binary', '--', '.', ':(exclude).aicontext')),
+    (Git-Text $r @('diff', '--cached', '--no-ext-diff', '--no-textconv', '--binary', '--', '.', ':(exclude).aicontext')))
+  $untracked = (Git-Text $r @('ls-files', '--others', '--exclude-standard', '-z', '--', '.', ':(exclude).aicontext')).TrimEnd("`r", "`n")
+  foreach ($f in ($untracked -split "`0")) {
+    if ($f) { $parts += ($f + "`0"); $parts += (Git-Text $r @('hash-object', '--no-filters', '--', $f)) }
+  }
+  # Match Bash's `git hash-object --stdin` byte for byte, including the Git blob header.
+  # SHA-1 is a compatibility checksum here, never an authentication or password hash.
+  $payload = [System.Text.Encoding]::UTF8.GetBytes((($parts -join '') -replace "`r", ''))
+  $header = [System.Text.Encoding]::UTF8.GetBytes(('blob ' + $payload.Length + "`0"))
+  $hash = [System.Security.Cryptography.SHA1]::Create()
+  try { ($hash.ComputeHash([byte[]]($header + $payload)) | ForEach-Object { $_.ToString('x2') }) -join '' }
+  finally { $hash.Dispose() }
+}
 function File-MtimeEpoch { param($p) if (-not (Test-Path $p)) { return 0 }; [int64]([datetimeoffset]((Get-Item $p).LastWriteTimeUtc)).ToUnixTimeSeconds() }
 function Encode-Cwd { param($p) ($p -replace '[^A-Za-z0-9]', '-') }
 
@@ -123,7 +151,15 @@ if ([Console]::IsInputRedirected -and $Command -in @('catch-up', 'precompact', '
   if ($raw) { try { $StdinObj = $raw | ConvertFrom-Json } catch {} }
 }
 function Stdin-Sid {
-  if ($StdinObj) { foreach ($k in 'session_id', 'trajectory_id', 'execution_id') { if ($StdinObj.$k) { return $StdinObj.$k } } }
+  if ($StdinObj) {
+    foreach ($k in 'session_id', 'trajectory_id', 'execution_id') {
+      if ($StdinObj.$k) {
+        $sid = [string]$StdinObj.$k
+        if ($sid -match '^[A-Za-z0-9_-]{1,128}$') { return $sid }
+        return (Sha256-Hex $sid)
+      }
+    }
+  }
   return $null
 }
 function Stdin-Transcript { if ($StdinObj -and $StdinObj.transcript_path) { return $StdinObj.transcript_path } return $null }
@@ -207,6 +243,17 @@ function Gap-Detected {
 }
 
 # --- global memory (the user's durable, cross-project preferences) ---------
+function Bound-Context {
+  param([string]$text, [int]$cap, [string]$source)
+  $sb = New-Object System.Text.StringBuilder
+  foreach ($line in ($text -split "`r?`n")) {
+    if ($sb.Length + $line.Length + 1 -gt $cap) {
+      [void]$sb.AppendLine("[Context truncated; read $source for the full text.]"); break
+    }
+    [void]$sb.AppendLine($line)
+  }
+  return $sb.ToString().TrimEnd()
+}
 function Build-MemoryBlock {
   $mf = Mem-File
   if (-not (Test-Path $mf)) { return '' }
@@ -219,7 +266,7 @@ function Build-MemoryBlock {
     if ($parts.Count -ge 5) { [void]$sb.AppendLine('- [' + $parts[1].Trim() + '] ' + $parts[4].Trim()) }
   }
   [void]$sb.Append("(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it with the CONTINUUM CLI shown at the top of this context, appending:  remember ""<preference>"" [--scope <area>]. Ask first before storing anything sensitive; do not store project secrets.)")
-  return $sb.ToString()
+  return (Bound-Context $sb.ToString() 4000 'continuum memory')
 }
 
 # --- catch-up (unified JSON additionalContext) -----------------------------
@@ -244,15 +291,23 @@ function Build-CatchupBody {
   [void]$sb.AppendLine('')
   [void]$sb.AppendLine('----- STATE.md -----')
   $st = Get-Content (Join-Path $r '.aicontext\STATE.md') -Raw -Encoding UTF8; if (-not $st) { $st = '(missing)' }
-  [void]$sb.AppendLine($st.TrimEnd())
+  [void]$sb.AppendLine((Bound-Context $st.TrimEnd() 10000 '.aicontext/STATE.md'))
   [void]$sb.AppendLine('')
   [void]$sb.AppendLine('----- JOURNAL.md (top entries) -----')
   $jc = 0
-  foreach ($line in (Get-Content (Join-Path $r '.aicontext\JOURNAL.md') -Encoding UTF8)) { if ($line -match '^## ') { $jc++ }; if ($jc -le 3) { [void]$sb.AppendLine($line) } else { break } }
+  $journal = New-Object System.Text.StringBuilder
+  foreach ($line in (Get-Content (Join-Path $r '.aicontext\JOURNAL.md') -Encoding UTF8)) { if ($line -match '^## ') { $jc++ }; if ($jc -le 3) { [void]$journal.AppendLine($line) } else { break } }
+  [void]$sb.AppendLine((Bound-Context $journal.ToString() 6000 '.aicontext/JOURNAL.md'))
   [void]$sb.AppendLine('')
   [void]$sb.AppendLine('----- TASKS.md: In progress -----')
   $f = $false
-  foreach ($line in (Get-Content (Join-Path $r '.aicontext\TASKS.md') -Encoding UTF8)) { if ($line -match '^##\s+.*[Ii]n progress') { $f = $true; continue }; if ($line -match '^## ') { $f = $false }; if ($f) { [void]$sb.AppendLine($line) } }
+  $tasks = New-Object System.Text.StringBuilder
+  foreach ($line in (Get-Content (Join-Path $r '.aicontext\TASKS.md') -Encoding UTF8)) { if ($line -match '^##\s+.*[Ii]n progress') { $f = $true; continue }; if ($line -match '^## ') { $f = $false }; if ($f) { [void]$tasks.AppendLine($line) } }
+  [void]$sb.AppendLine((Bound-Context $tasks.ToString() 3000 '.aicontext/TASKS.md'))
+  if (Get-ChildItem (Join-Path $r '.aicontext\spec') -Filter *.md -ErrorAction SilentlyContinue) {
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('SPEC: structured project context is available (features / data models / business rules / test cases / design tokens). Pull it when building a feature - run ''continuum spec'' or call the continuum_spec MCP tool. Not dumped here to keep this brief.')
+  }
   return $sb.ToString()
 }
 function Emit-AdditionalContext { param($event, $text) (@{ hookSpecificOutput = @{ hookEventName = $event; additionalContext = $text } } | ConvertTo-Json -Compress -Depth 6) }
@@ -296,22 +351,30 @@ function Cmd-Guard {
   $sid = Stdin-Sid; if (-not $sid) { $sid = 'default' }
   $mf = Marker-File $r $sid
   if (-not (Test-Path $mf)) { exit 0 }
-  if ((Marker-Get $mf 'handoff') -eq '1') { exit 0 }
   if ((Marker-Get $mf 'nudged') -eq '1') { exit 0 }
   $startCommit = Marker-Get $mf 'startCommit'; $startStatus = Marker-Get $mf 'startStatus'
   $startEpoch = [int64](Marker-Get $mf 'startEpoch'); if (-not $startEpoch) { $startEpoch = 0 }
   $work = $false; $committed = $false
-  if ((Git-Sha $r) -ne $startCommit) { $work = $true; $committed = $true }
-  if ((Git-DirtySum $r) -ne $startStatus) { $work = $true }
-  if (-not $work) { exit 0 }
+  $currentCommit = Git-Sha $r; $currentStatus = Git-DirtySum $r
+  if ($currentCommit -ne $startCommit) { $work = $true; $committed = $true }
+  if ($currentStatus -ne $startStatus) { $work = $true }
   # Already handed off this session? A `continuum save` after session start counts, even if it
   # couldn't stamp this session's marker (a manual save has no session_id from stdin).
   $ho = Manifest-Get $r 'handoffAt'
-  if ($ho) { try { $hoE = [int64]([datetimeoffset]::Parse($ho)).ToUnixTimeSeconds() } catch { $hoE = 0 }; if ($hoE -ge $startEpoch) { exit 0 } }
+  $workAfterSave = $false
+  if ($ho) {
+    try { $hoE = [int64]([datetimeoffset]::Parse($ho)).ToUnixTimeSeconds() } catch { $hoE = 0 }
+    if ($hoE -ge $startEpoch -and (Manifest-Get $r 'handoffStatus') -eq $currentStatus -and (Manifest-Get $r 'lastCommit') -eq $currentCommit) { exit 0 }
+    $workAfterSave = ($hoE -ge $startEpoch)
+  }
+  if (-not $work -and -not $workAfterSave) { exit 0 }
   $stateM = File-MtimeEpoch (Join-Path $r '.aicontext\STATE.md')
   $decM = File-MtimeEpoch (Join-Path $r '.aicontext\DECISIONS.md')
   $reason = $null
-  if (-not ($stateM -gt $startEpoch)) {
+  if ($workAfterSave) {
+    $reason = 'you changed code after the last saved handoff. Update STATE.md and JOURNAL.md, then run continuum save again.'
+  }
+  elseif (-not ($stateM -gt $startEpoch)) {
     $reason = "you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'. Also, if the user stated a durable, cross-project preference this session (a default tool, a convention, a like/dislike), capture it with 'continuum remember' (the preference in quotes)."
   }
   elseif ($committed -and -not ($decM -gt $startEpoch)) {
@@ -336,6 +399,7 @@ function Cmd-Save {
   Set-Prop $c 'handoffAt' (Now-Iso)
   Set-Prop $c 'lastAgent' $agent
   Set-Prop $c 'lastCommit' (Git-Sha $r)
+  Set-Prop $c 'handoffStatus' (Git-DirtySum $r)
   Set-Prop $c 'lastSessionId' ($(if ($sid) { $sid } else { '' }))
   $count = 0; if ($c.PSObject.Properties.Name -contains 'sessionCount') { $count = [int]$c.sessionCount }
   Set-Prop $c 'sessionCount' ($count + 1)
@@ -456,8 +520,8 @@ function Cmd-Import {
       Write-Output "Branch: $b    Span: $ff -> $ll"
       Write-Output ''
       Write-Output 'User asked (in order):'
-      $n = 0; foreach ($p in $script:prompts) { if ($n -ge 12) { break }; $one = $p; if ($one.Length -gt 160) { $one = $one.Substring(0, 160) }; Write-Output "  - $one"; $n++ }
-      if ($script:prompts.Count -gt 12) { Write-Output "  - ...and $($script:prompts.Count - 12) more" }
+      if ($script:prompts.Count -gt 12) { Write-Output "  - ...$($script:prompts.Count - 12) earlier prompts omitted; showing the most recent 12" }
+      foreach ($p in ($script:prompts | Select-Object -Last 12)) { $one = $p; if ($one.Length -gt 160) { $one = $one.Substring(0, 160) }; Write-Output "  - $one" }
       Write-Output ''
       Write-Output 'Files touched:'
       if ($script:files.Count -eq 0) { Write-Output '  - (none detected)' } else { foreach ($fp in ($script:files | Sort-Object)) { Write-Output "  - $fp" } }
@@ -485,9 +549,10 @@ function Cmd-Verify {
   if (-not $cmd) { Write-Error 'continuum: no verify command set. Configure one:  continuum verify --set "npm test"'; return }
   Write-Output "continuum: verifying with -> $cmd"
   Push-Location $r
-  & cmd /c $cmd
-  $ok = ($LASTEXITCODE -eq 0)
-  Pop-Location
+  try {
+    if ($env:OS -eq 'Windows_NT') { & cmd /c $cmd } else { & sh -c $cmd }
+    $ok = ($LASTEXITCODE -eq 0)
+  } finally { Pop-Location }
   $m = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
   if (-not $m.continuum) { Set-Prop $m 'continuum' ([pscustomobject]@{}) }
   $sha = Git-Sha $r
@@ -496,7 +561,7 @@ function Cmd-Verify {
   Set-Prop $m.continuum 'verifiedOk' $ok
   Write-Text-Atomic $f ($m | ConvertTo-Json -Depth 12)
   $short = if ($sha) { $sha.Substring(0, [Math]::Min(7, $sha.Length)) } else { '' }
-  if ($ok) { Write-Output "continuum: verify PASSED at $short" } else { Write-Output "continuum: verify FAILED at $short" }
+  if ($ok) { Write-Output "continuum: verify PASSED at $short" } else { throw "continuum: verify FAILED at $short" }
 }
 
 function Cmd-Status {
@@ -534,7 +599,9 @@ function Cmd-Doctor {
 function Cmd-Remember {
   $scope = Arg-Val '--scope' 'global'; $src = Arg-Val '--source' 'user'
   $text = (((Positional-Args @('--scope', '--source')) -join ' ') -replace '\s+', ' ').Trim()
-  if (-not $text) { Write-Output 'usage: continuum remember "<durable cross-project preference>" [--scope <area>] [--source user|agent]'; return }
+  if ($text.Length -gt 8192) { throw 'continuum: memory exceeds 8192 characters' }
+  if (($scope + $src) -match '[|\r\n]') { throw 'continuum: invalid memory metadata' }
+  if (-not $text) { throw 'usage: continuum remember "<durable cross-project preference>" [--scope <area>] [--source user|agent]' }
   $mf = Mem-File; $dir = Split-Path $mf -Parent
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
   if (Test-Path $mf) { $existing = @(Get-Content $mf -Encoding UTF8) }
@@ -552,7 +619,7 @@ function Cmd-Remember {
 
 function Cmd-Forget {
   $q = ((Positional-Args @()) -join ' ').Trim()
-  if (-not $q) { Write-Output 'usage: continuum forget <id|text-substring>'; return }
+  if (-not $q) { throw 'usage: continuum forget <id|text-substring>' }
   $mf = Mem-File
   if (-not (Test-Path $mf)) { Write-Output 'continuum: no global memories yet.'; return }
   $kept = @(); $removed = 0
@@ -573,6 +640,79 @@ function Cmd-Memory {
   if ($n -eq 0) { Write-Output '  (none yet - add: continuum remember "...")' }
 }
 
+# spec: structured, agent-native project context (features / data models / business rules / test cases /
+# design tokens) as plain versioned markdown in .aicontext/spec/, served over MCP. A store any producer writes into.
+$script:SpecFiles = @('features', 'data-models', 'business-rules', 'test-cases', 'design-tokens')
+function Spec-Stub($name) {
+  switch ($name) {
+    'features' { @"
+# Features
+<!-- Features and specs in plain language. One section per feature: what it does and why. -->
+
+## <Feature name>
+<what it does and why, in plain language>
+"@ }
+    'data-models' { @"
+# Data Models
+<!-- Entities and their fields, so agents never guess your schema. One section per entity. -->
+
+## <EntityName>
+- <field>: <type> - <notes / constraints>
+"@ }
+    'business-rules' { @"
+# Business Rules
+<!-- The logic agents must honor and tests must assert. Numbered, plain, checkable. -->
+
+- BR1: <rule stated as a checkable condition>
+"@ }
+    'test-cases' { @"
+# Test Cases
+<!-- Given / When / Then, in language a test can be written from directly. -->
+
+## <scenario>
+- Given <state>
+- When <action>
+- Then <expected outcome>
+"@ }
+    'design-tokens' { @"
+# Design Tokens
+<!-- Colors, typography, spacing. One source so UI stays consistent across agents. -->
+
+## Colors
+- <name>: <value>
+
+## Typography
+- <name>: <value>
+
+## Spacing
+- <name>: <value>
+"@ }
+  }
+}
+function Cmd-Spec {
+  param($r, $sub)
+  if (-not $r) { Write-Error 'continuum: no .aicontext/ ledger found from this directory (run this inside a Continuum project).'; return }
+  $sd = Join-Path $r '.aicontext\spec'
+  if ($sub -eq 'init') {
+    if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Force -Path $sd | Out-Null }
+    $enc = New-Object System.Text.UTF8Encoding($false)   # no BOM (PS 5.1 mis-parses BOM'd markdown elsewhere)
+    $created = 0
+    foreach ($n in $script:SpecFiles) {
+      $p = Join-Path $sd ($n + '.md')
+      if (-not (Test-Path $p)) { [System.IO.File]::WriteAllText($p, (Spec-Stub $n), $enc); $created++ }
+    }
+    Write-Output "continuum: spec store ready at .aicontext/spec/ ($created new file(s); existing left untouched)."
+    return
+  }
+  if (-not (Test-Path $sd) -or -not (Get-ChildItem $sd -Filter *.md -ErrorAction SilentlyContinue)) {
+    Write-Output 'continuum: no spec store yet. Create one:  continuum spec init'; return
+  }
+  foreach ($f in (Get-ChildItem $sd -Filter *.md | Sort-Object Name)) {
+    Write-Output ("----- spec/" + $f.Name + " -----")
+    Write-Output (Get-Content $f.FullName -Raw -Encoding UTF8)
+  }
+}
+
 # context: the plain catch-up body (global memory + project ledger view), with NO hook JSON wrapper,
 # NO stdin, NO session marker, NO auto-update. Single source of truth for the MCP server + manual use.
 function Cmd-Context {
@@ -583,19 +723,35 @@ function Cmd-Context {
   elseif (-not $mblock) { Write-Output 'continuum: no .aicontext/ ledger here and no global memory yet.' }
 }
 
-function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status context doctor remember forget memory' }
+function Usage { Write-Output 'Continuum helper - commands: catch-up precompact guard import save verify compact status context doctor remember forget memory spec self-update' }
 
 # --- dispatch --------------------------------------------------------------
 $script:CurTranscript = Stdin-Transcript
 $ROOT = Find-Root
 if (-not $ROOT) {
   if ($Command -in @('precompact', 'guard')) { exit 0 }   # project-only hooks
-  if ($Command -in @('save', 'verify', 'compact', 'import', 'status', 'doctor')) {
+  if ($Command -in @('save', 'verify', 'compact', 'import', 'status', 'doctor', 'spec')) {
     Write-Output 'continuum: no .aicontext/ ledger found from this directory.'; exit 1
   }
   # catch-up (global memory), remember, forget, memory continue with $ROOT = $null
 }
-switch ($Command) {
+if ($Command -notin @('catch-up', 'precompact', 'guard', 'self-update')) { $ErrorActionPreference = 'Stop' }
+$lockDir = $null; $lockHeld = $false; $lockStream = $null
+try {
+  if ($Command -in @('remember', 'forget')) { $lockDir = Join-Path (Split-Path (Mem-File) -Parent) '.write-lock' }
+  elseif ($Command -in @('save', 'verify', 'compact') -or ($Command -eq 'spec' -and $Rest -contains 'init')) { $lockDir = Join-Path $ROOT '.aicontext/.write-lock' }
+  if ($lockDir) {
+    [System.IO.Directory]::CreateDirectory((Split-Path $lockDir -Parent)) | Out-Null
+    for ($attempt = 0; $attempt -lt 200; $attempt++) {
+      try {
+        $lockStream = [System.IO.File]::Open($lockDir, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+        $lockHeld = $true; break
+      }
+      catch [System.IO.IOException] { Start-Sleep -Milliseconds 50 }
+    }
+    if (-not $lockHeld) { throw "continuum: write lock busy: $lockDir (retry; after a crash, remove only when no writer is running)" }
+  }
+  switch ($Command) {
   # Hook commands are FAIL-SAFE: swallow any error and exit 0 so a failure can never break the host.
   'catch-up' { try { Cmd-CatchUp $ROOT } catch {}; exit 0 }
   'precompact' { try { Cmd-PreCompact } catch {}; exit 0 }
@@ -606,11 +762,16 @@ switch ($Command) {
   'import' { Cmd-Import $ROOT }
   'status' { Cmd-Status $ROOT }
   'context' { Cmd-Context $ROOT }
+  'spec' { Cmd-Spec $ROOT ($Rest | Select-Object -First 1) }
   'doctor' { Cmd-Doctor $ROOT }
   'remember' { Cmd-Remember }
   'forget' { Cmd-Forget }
   'memory' { Cmd-Memory }
   'self-update' { try { Cmd-SelfUpdate } catch {}; exit 0 }
-  default { Usage }
-}
+  'help' { Usage }
+  '--help' { Usage }
+  '-h' { Usage }
+  default { throw "continuum: unknown command '$Command'" }
+} } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+finally { if ($lockHeld) { $lockStream.Dispose(); [System.IO.File]::Delete($lockDir) } }
 exit 0

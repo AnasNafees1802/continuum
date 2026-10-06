@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://anasnafees1802.github.io/continuum/">Website</a> ·
   <a href="#install">Install</a> ·
-  <a href="https://github.com/AnasNafees1802/continuum/releases/tag/v2.0.0">v2.0.0</a> ·
+  <a href="https://github.com/AnasNafees1802/continuum/releases">Releases</a> ·
   <a href="LICENSE">MIT</a>
 </p>
 
@@ -106,6 +106,22 @@ servers, so they get Continuum over MCP *and* via native hooks / `AGENTS.md`. An
 ChatGPT's connectors are remote-HTTP only and cannot launch a local server, so Continuum reaches it
 through `AGENTS.md` and web bundles rather than MCP. One ledger, reached whichever way each tool allows.
 
+## Structured project context
+
+Agents don't just need *where you left off*; they need *what to build against*. Run `continuum spec init`
+to seed `.aicontext/spec/` with five plain-markdown files you own and version in git:
+
+- `features.md` — features and specs in plain language
+- `data-models.md` — entities and fields, so the agent stops guessing your schema
+- `business-rules.md` — the logic agents must honor and tests must assert
+- `test-cases.md` — Given / When / Then acceptance criteria
+- `design-tokens.md` — colors, typography, spacing for consistent UI
+
+An agent reads it before building a feature with `continuum spec`, the `continuum_spec` MCP tool, or the
+`continuum://spec/*` resources. Catch-up only *points* to the store so the briefing stays short. It's a
+store any producer writes into — you, an agent, or another tool — not a second app to log into. This is
+the local, versioned, no-account answer to hosted spec tools.
+
 ## 🧠 Global memory — tell one agent, every agent remembers
 
 Continuum carries the **project**; it also carries **you**. Alongside the per-project ledger, it keeps a
@@ -129,9 +145,9 @@ into every agent.
 
 Continuum saves real money, not just typing:
 
-- **No re-explaining.** Catch-up injects a compact summary (a few hundred tokens) instead of you re-pasting the whole project into every fresh session.
+- **No re-explaining.** Catch-up injects a bounded summary instead of requiring you to re-paste the project into every fresh session. Actual token use depends on the ledger and model.
 - **No redone work.** A session killed by a usage limit is reconstructed, not repeated, which is the most expensive kind of waste there is.
-- **Bounded context.** Journal rotation keeps the ledger small, so the memory never bloats the very context window it exists to save.
+- **Bounded context.** Catch-up gives STATE, recent JOURNAL, in-progress TASKS, and global memory separate character budgets. A truncated section points to its full source; journal rotation archives older entries.
 
 ## Install
 
@@ -270,7 +286,10 @@ that has them and uses a **shared helper CLI** for the bookkeeping:
 - **Bounded cost**, `continuum save` rotates old `JOURNAL.md` entries into `.aicontext/archive/`, so
   the ledger never bloats the context it's meant to save.
 
-The helper is plain PowerShell + bash (no runtime, no dependencies). It only does mechanics -
+The helpers use PowerShell on Windows or Bash on macOS/Linux, plus Git. Bash manifest writes
+require Python or jq; Bash hook installation and transcript reconstruction require Python.
+The MCP server uses Python's standard library; safe Codex TOML registration requires Python 3.11+.
+The helpers only do mechanics -
 timestamps, `manifest.json`, git checks, transcript parsing, rotation. **The agent still writes the
 actual prose**; that judgment isn't something to automate away.
 
@@ -309,11 +328,40 @@ hook system, so catch-up rides the honor-protocol (it reads `AGENTS.md`/`GEMINI.
 - **Gitignored by default**, `.aicontext/` is machine-local, not pushed. The adapter files *are*
   committed, so the protocol travels with the repo and each clone re-inits its own local ledger.
   (Want it shared with your team? Remove `.aicontext/` from `.gitignore` and commit it.)
-- **Plain Markdown + JSON**, no runtime, no service, no lock-in. Readable and editable by hand.
+- **Plain Markdown + JSON**, no service or proprietary storage. The ledger remains readable and editable without running the helpers.
 - **`STATE.md` is living; `JOURNAL.md`/`DECISIONS.md` are append-only**, so you always have both a
   fast current snapshot and a full, trustworthy history.
 
 ## Roadmap
+
+### Reliability and validation
+
+Run `python test/regression.py` (Python 3.11+) and `bash test/smoke.sh` from the checkout.
+Regression tests use temporary homes and repositories, disable auto-update, and exercise both
+Windows PowerShell and Bash when available. GitHub Actions runs on Windows, Linux, and macOS.
+Platform-specific tests report skips explicitly.
+
+Installers refuse malformed configuration rather than replacing it. Changed configuration is
+backed up to `.continuum.bak` and written through a temporary file. TOML merges are parsed before
+and after modification and checked for preservation of unrelated values. Unusual layouts such
+as an inline `mcp_servers` object are left untouched with an error; use ordinary TOML tables.
+
+CLI memory writes and ledger bookkeeping use a shared exclusive-create lock with a 10-second
+wait limit. If a writer is killed, its `.write-lock` file can remain under `.aicontext/` or
+`~/.continuum/memory/`; remove it only after checking that no writer is running, then retry.
+These locks do not serialize direct edits made by editors or agents to Markdown files.
+
+Catch-up budgets are 10,000 characters for STATE, 6,000 for recent JOURNAL, 3,000 for TASKS, and
+4,000 for global memory, plus labels and diagnostics. These are character limits, not exact
+token counts; full text remains available on demand. MCP resource reads are limited to 1 MiB
+per file. Stop reminders compare file content, including untracked files, while excluding the
+ledger itself. A failed verification now returns a nonzero exit status.
+
+Automatic updates still trust the upstream `main` branch. For controlled installations, set
+`CONTINUUM_NO_AUTOUPDATE=1` and update from a reviewed checkout. Signed releases and rollback
+support remain future work; the tests do not certify every live client's hook integration.
+
+### Planned work
 
 - ✅ ~~Deterministic capture~~, shipped: native session-start / pre-compaction / stop hooks on Claude
   Code, Codex, Gemini and Cursor (Windsurf via its per-turn hook).

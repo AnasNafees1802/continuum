@@ -88,7 +88,22 @@ file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || ech
 
 git_sha()   { git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo ""; }
 git_branch(){ git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""; }
-git_dirty_sum() { git -C "$ROOT" status --porcelain 2>/dev/null | cksum | awk '{print $1}'; }
+git_dirty_sum() {
+  {
+    git -C "$ROOT" status --porcelain -- . ':(exclude).aicontext' 2>/dev/null
+    git -C "$ROOT" diff --no-ext-diff --no-textconv --binary -- . ':(exclude).aicontext' 2>/dev/null
+    git -C "$ROOT" diff --cached --no-ext-diff --no-textconv --binary -- . ':(exclude).aicontext' 2>/dev/null
+    git -C "$ROOT" ls-files --others --exclude-standard -z -- . ':(exclude).aicontext' 2>/dev/null |
+      while IFS= read -r -d '' f; do
+        printf '%s\0' "$f"
+        git -C "$ROOT" hash-object --no-filters -- "$f" 2>/dev/null
+      done
+  } | tr -d '\r' | git hash-object --stdin
+}
+iso_epoch() {
+  # BSD date (macOS) has no -d. Normalize offsets for its -j parser.
+  date -d "$1" +%s 2>/dev/null || date -j -f '%Y-%m-%dT%H:%M:%S%z' "$(printf '%s' "$1" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')" +%s 2>/dev/null || echo 0
+}
 
 sha256_of() {
   if have sha256sum; then printf '%s' "$1" | sha256sum | awk '{print $1}'
@@ -139,9 +154,11 @@ read_stdin_field() {
 # Session id, tolerating each platform's naming (Claude/Codex/Gemini/Cursor: session_id; Windsurf: trajectory_id).
 stdin_sid() {
   local v
-  v="$(read_stdin_field session_id)";    [ -n "$v" ] && { printf '%s' "$v"; return; }
-  v="$(read_stdin_field trajectory_id)"; [ -n "$v" ] && { printf '%s' "$v"; return; }
-  read_stdin_field execution_id
+  v="$(read_stdin_field session_id)"
+  [ -n "$v" ] || v="$(read_stdin_field trajectory_id)"
+  [ -n "$v" ] || v="$(read_stdin_field execution_id)"
+  [ -n "$v" ] || return 0
+  if [[ "$v" =~ ^[A-Za-z0-9_-]{1,128}$ ]]; then printf '%s' "$v"; else sha256_of "$v"; fi
 }
 
 # Cheap, path-derivable transcript dirs (Claude + Gemini). Codex needs a cwd scan (import only).
@@ -186,7 +203,7 @@ verify_line() {
 gap_detected() {
   local handoff h_epoch f m newest=0 any=0
   handoff="$(manifest_get handoffAt)"
-  h_epoch=0; [ -n "$handoff" ] && h_epoch="$(date -d "$handoff" +%s 2>/dev/null || echo 0)"
+  h_epoch=0; [ -n "$handoff" ] && h_epoch="$(iso_epoch "$handoff")"
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     [ "$f" = "$CUR_TRANSCRIPT" ] && continue
@@ -207,8 +224,13 @@ build_memory_block() {
   # line format: "- <id> | <scope> | <src> | <date> | <text>"  ->  render "- [scope] text"
   printf '%s\n' "$lines" | while IFS='|' read -r _id scope _src _date text; do
     printf -- '- [%s] %s\n' "$(printf '%s' "$scope" | sed 's/^ *//; s/ *$//')" "$(printf '%s' "$text" | sed 's/^ *//; s/ *$//')"
-  done
+  done | bound_context 4000 'continuum memory'
   echo "(Apply these across every project. When the user states a NEW durable, cross-project preference - a like/dislike, a default tool, a naming convention - capture it with the CONTINUUM CLI shown at the top of this context, appending:  remember \"<preference>\" [--scope <area>]. Ask first before storing anything sensitive; do not store project secrets.)"
+}
+
+bound_context() {
+  # Keep complete lines (and UTF-8 sequences). Full files remain available on demand.
+  awk -v cap="$1" -v source="$2" 'length($0)+n+1>cap {print "[Context truncated; read " source " for the full text.]"; exit} {print; n+=length($0)+1}'
 }
 
 # ---------------------------------------------------------------------------
@@ -232,13 +254,17 @@ build_catchup_body() {
   fi
   echo
   echo "----- STATE.md -----"
-  cat "$ROOT/.aicontext/STATE.md" 2>/dev/null || echo "(missing)"
+  if [ -f "$ROOT/.aicontext/STATE.md" ]; then bound_context 10000 '.aicontext/STATE.md' < "$ROOT/.aicontext/STATE.md"; else echo '(missing)'; fi
   echo
   echo "----- JOURNAL.md (top entries) -----"
-  awk 'BEGIN{c=0} /^## /{c++} c<=3{print} c>3{exit}' "$ROOT/.aicontext/JOURNAL.md" 2>/dev/null
+  awk 'BEGIN{c=0} /^## /{c++} c<=3{print} c>3{exit}' "$ROOT/.aicontext/JOURNAL.md" 2>/dev/null | bound_context 6000 '.aicontext/JOURNAL.md'
   echo
   echo "----- TASKS.md: In progress -----"
-  awk '/^## .*[Ii]n progress/{f=1;next} /^## /{f=0} f' "$ROOT/.aicontext/TASKS.md" 2>/dev/null
+  awk '/^## .*[Ii]n progress/{f=1;next} /^## /{f=0} f' "$ROOT/.aicontext/TASKS.md" 2>/dev/null | bound_context 3000 '.aicontext/TASKS.md'
+  if ls "$ROOT/.aicontext/spec"/*.md >/dev/null 2>&1; then
+    echo
+    echo "SPEC: structured project context is available (features / data models / business rules / test cases / design tokens). Pull it when building a feature - run 'continuum spec' or call the continuum_spec MCP tool. Not dumped here to keep this brief."
+  fi
 }
 
 cmd_catch_up() {
@@ -285,27 +311,30 @@ cmd_guard() {
   [ -n "$active" ] && exit 0
   local sid mf; sid="$(stdin_sid)"; [ -z "$sid" ] && sid="default"; mf="$(marker_file "$sid")"
   [ -f "$mf" ] || exit 0
-  [ "$(marker_get handoff "$mf")" = "1" ] && exit 0
   [ "$(marker_get nudged  "$mf")" = "1" ] && exit 0
   local start_commit start_status start_epoch work=0
   start_commit="$(marker_get startCommit "$mf")"
   start_status="$(marker_get startStatus "$mf")"
   start_epoch="$(marker_get startEpoch "$mf")"; [ -z "$start_epoch" ] && start_epoch=0
-  local committed=0
-  [ "$(git_sha)" != "$start_commit" ] && { work=1; committed=1; }
-  [ "$(git_dirty_sum)" != "$start_status" ] && work=1
-  [ "$work" = "0" ] && exit 0
+  local committed=0 current_commit current_status
+  current_commit="$(git_sha)"; current_status="$(git_dirty_sum)"
+  [ "$current_commit" != "$start_commit" ] && { work=1; committed=1; }
+  [ "$current_status" != "$start_status" ] && work=1
   # Already handed off this session? A `continuum save` after session start counts,
   # even if it couldn't stamp this session's marker (manual save has no session_id).
-  local ho ho_e; ho="$(manifest_get handoffAt)"
+  local ho ho_e work_after_save=0; ho="$(manifest_get handoffAt)"
   if [ -n "$ho" ]; then
-    ho_e="$(date -d "$ho" +%s 2>/dev/null || echo 0)"
-    [ "$ho_e" -ge "$start_epoch" ] 2>/dev/null && exit 0
+    ho_e="$(iso_epoch "$ho")"
+    if [ "$ho_e" -ge "$start_epoch" ] 2>/dev/null && [ "$(manifest_get handoffStatus)" = "$current_status" ] && [ "$(manifest_get lastCommit)" = "$current_commit" ]; then exit 0; fi
+    [ "$ho_e" -ge "$start_epoch" ] 2>/dev/null && work_after_save=1
   fi
+  [ "$work" = 0 ] && [ "$work_after_save" = 0 ] && exit 0
   local state_mtime dec_mtime reason=""
   state_mtime="$(file_mtime "$ROOT/.aicontext/STATE.md")"
   dec_mtime="$(file_mtime "$ROOT/.aicontext/DECISIONS.md")"
-  if ! { [ "$state_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
+  if [ "$work_after_save" = 1 ]; then
+    reason='you changed code after the last saved handoff. Update STATE.md and JOURNAL.md, then run continuum save again.'
+  elif ! { [ "$state_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
     # did real work but never updated STATE -> no handoff saved
     reason="you changed files this session but haven't saved a handoff. Update .aicontext/STATE.md, append a 'Left off at' entry to JOURNAL.md, log any design choice in DECISIONS.md, move items in TASKS.md, then run 'continuum save'. Also, if the user stated a durable, cross-project preference this session (a default tool, a convention, a like/dislike), capture it with 'continuum remember' (the preference in quotes)."
   elif [ "$committed" = "1" ] && ! { [ "$dec_mtime" -gt "$start_epoch" ] 2>/dev/null; }; then
@@ -320,7 +349,7 @@ cmd_guard() {
 cmd_save() {
   local agent="claude-code" do_verify=0
   while [ $# -gt 0 ]; do case "$1" in --agent) agent="$2"; shift 2;; --verify) do_verify=1; shift;; *) shift;; esac; done
-  [ "$do_verify" = "1" ] && cmd_verify
+  if [ "$do_verify" = "1" ]; then cmd_verify || return $?; fi
   local f="$ROOT/.aicontext/manifest.json"
   [ -f "$f" ] || { echo "continuum: no manifest.json at $f" >&2; return 1; }
   local uh ui sha sid tmp
@@ -328,19 +357,21 @@ cmd_save() {
   sid="$(stdin_sid)"; [ -z "$sid" ] && sid="$(ls -1t "$(marker_dir)" 2>/dev/null | head -1 | sed 's/\.env$//')"
   tmp="$f.tmp.$$"
   if have jq; then
-    jq --arg u "$uh" --arg h "$ui" --arg a "$agent" --arg c "$sha" --arg s "${sid:-}" '
+    jq --arg u "$uh" --arg h "$ui" --arg a "$agent" --arg c "$sha" --arg s "${sid:-}" --arg ds "$(git_dirty_sum)" '
       .continuum.lastUpdated=$u | .continuum.handoffAt=$h | .continuum.lastAgent=$a
       | .continuum.lastCommit=$c | .continuum.lastSessionId=$s
+      | .continuum.handoffStatus=$ds
       | .continuum.sessionCount=((.continuum.sessionCount // 0)+1)
       | .continuum.agentsSeen=(((.continuum.agentsSeen // []) + [$a]) | unique)
     ' "$f" > "$tmp" && mv "$tmp" "$f"
   elif have_py; then
-    CONT_U="$uh" CONT_H="$ui" CONT_A="$agent" CONT_C="$sha" CONT_S="${sid:-}" $PY_BIN - "$f" <<'PY'
+    CONT_U="$uh" CONT_H="$ui" CONT_A="$agent" CONT_C="$sha" CONT_S="${sid:-}" CONT_DS="$(git_dirty_sum)" $PY_BIN - "$f" <<'PY'
 import json,os,sys
 p=sys.argv[1]
 d=json.load(open(p,encoding="utf-8-sig"))          # tolerate a BOM (PS may have written one)
 c=d.setdefault("continuum",{})
 c["lastUpdated"]=os.environ["CONT_U"]; c["handoffAt"]=os.environ["CONT_H"]
+c["handoffStatus"]=os.environ["CONT_DS"]
 c["lastAgent"]=os.environ["CONT_A"]; c["lastCommit"]=os.environ["CONT_C"]
 c["lastSessionId"]=os.environ["CONT_S"]; c["sessionCount"]=int(c.get("sessionCount",0))+1
 seen=c.get("agentsSeen") or []
@@ -351,14 +382,11 @@ with open(tmp,"w",encoding="utf-8") as fh: json.dump(d,fh,indent=2); fh.write("\
 os.replace(tmp,p)
 PY
   else
-    sed -i.bak -E \
-      -e "s|(\"lastUpdated\"[[:space:]]*:[[:space:]]*\")[^\"]*|\1$uh|" \
-      -e "s|(\"handoffAt\"[[:space:]]*:[[:space:]]*)(\"[^\"]*\"\|null)|\1\"$ui\"|" \
-      -e "s|(\"lastAgent\"[[:space:]]*:[[:space:]]*\")[^\"]*|\1$agent|" \
-      -e "s|(\"lastCommit\"[[:space:]]*:[[:space:]]*)(\"[^\"]*\"\|null)|\1\"$sha\"|" \
-      "$f" && rm -f "$f.bak"
-    echo "continuum: jq/python3 not found — updated scalar fields only (sessionCount/agentsSeen unchanged)." >&2
+    echo 'continuum: Python or jq is required to save the manifest safely.' >&2
+    return 1
   fi
+  local write_status=$?
+  [ "$write_status" -eq 0 ] || return "$write_status"
   [ -n "${sid:-}" ] && marker_set handoff 1 "$(marker_file "$sid")"
   [ -z "$sha" ] && echo "continuum: WARNING - not a git repository (or no commits yet); commit not stamped, so drift/verify checks will be limited." >&2
   echo "continuum: handoff saved (agent=$agent, commit=${sha:0:7}, at $uh)."
@@ -519,8 +547,8 @@ for line in open(path,encoding="utf-8",errors="replace"):
 print("## Transcript view — source: %s (%s)" % (src, os.path.basename(path)))
 print("Branch: %s    Span: %s -> %s" % (branch or "n/a", first or "?", last or "?"))
 print("\nUser asked (in order):")
-for p in prompts[:12]: print("  -", p[:160])
-if len(prompts)>12: print("  - ...and %d more" % (len(prompts)-12))
+if len(prompts)>12: print("  - ...%d earlier prompts omitted; showing the most recent 12" % (len(prompts)-12))
+for p in prompts[-12:]: print("  -", p[:160])
 print("\nFiles touched:")
 if files:
     for f in sorted(files): print("  -", f)
@@ -613,6 +641,8 @@ cmd_remember() {
     esac
   done
   text="$(printf '%s' "$text" | tr '\n\t' '  ' | sed 's/  */ /g; s/^ *//; s/ *$//')"
+  [ "${#text}" -gt 8192 ] && { echo 'continuum: memory exceeds 8192 characters' >&2; return 1; }
+  case "$scope$src" in *'|'*|*$'\n'*|*$'\r'*) echo 'continuum: invalid memory metadata' >&2; return 1;; esac
   [ -z "$text" ] && { echo "usage: continuum remember \"<durable cross-project preference>\" [--scope <area>] [--source user|agent]" >&2; return 1; }
   local mf; mf="$(mem_file)"; mkdir -p "$(dirname "$mf")"
   [ -f "$mf" ] || printf '%s\n' \
@@ -620,9 +650,12 @@ cmd_remember() {
     "<!-- Durable, cross-project preferences. Injected into every AI agent at session start, in every project." \
     "     list: 'continuum memory'   add: 'continuum remember \"...\"'   remove: 'continuum forget <id|text>' -->" \
     "" > "$mf"
-  if grep -Fq -- "| $text" "$mf" 2>/dev/null; then echo "continuum: already remembered - \"$text\""; return 0; fi
+  if CONT_TEXT="$text" awk 'BEGIN{t=ENVIRON["CONT_TEXT"]} /^- / {s=$0; for(i=0;i<4;i++) sub(/^[^|]*\| /,"",s); if(s==t) found=1} END{exit !found}' "$mf"; then echo "continuum: already remembered - \"$text\""; return 0; fi
   local id date; id="$(short_id "$text")"; date="$(date '+%Y-%m-%d')"
-  printf -- '- %s | %s | %s | %s | %s\n' "$id" "$scope" "$src" "$date" "$text" >> "$mf"
+  local tmp="$mf.tmp.$$"
+  cp "$mf" "$tmp" || return 1
+  printf -- '- %s | %s | %s | %s | %s\n' "$id" "$scope" "$src" "$date" "$text" >> "$tmp" || return 1
+  mv -f "$tmp" "$mf" || return 1
   echo "continuum: remembered [$scope] \"$text\" (id $id) - it will reach every agent, in every project."
 }
 
@@ -664,6 +697,86 @@ cmd_context() {
   fi
 }
 
+# --------------------------------------------------------------------------
+# spec — structured, agent-native project context (data models, business rules,
+# test cases, design tokens, features). Plain versioned markdown in .aicontext/spec/,
+# served over MCP. A STORE any producer (you / an agent / Kontra) writes into.
+# --------------------------------------------------------------------------
+SPEC_FILES="features data-models business-rules test-cases design-tokens"
+write_spec_stub() { # $1=name  $2=target
+  case "$1" in
+    features) cat > "$2" <<'EOF'
+# Features
+<!-- Features and specs in plain language. One section per feature: what it does and why. -->
+
+## <Feature name>
+<what it does and why, in plain language>
+EOF
+;;
+    data-models) cat > "$2" <<'EOF'
+# Data Models
+<!-- Entities and their fields, so agents never guess your schema. One section per entity. -->
+
+## <EntityName>
+- <field>: <type> - <notes / constraints>
+EOF
+;;
+    business-rules) cat > "$2" <<'EOF'
+# Business Rules
+<!-- The logic agents must honor and tests must assert. Numbered, plain, checkable. -->
+
+- BR1: <rule stated as a checkable condition>
+EOF
+;;
+    test-cases) cat > "$2" <<'EOF'
+# Test Cases
+<!-- Given / When / Then, in language a test can be written from directly. -->
+
+## <scenario>
+- Given <state>
+- When <action>
+- Then <expected outcome>
+EOF
+;;
+    design-tokens) cat > "$2" <<'EOF'
+# Design Tokens
+<!-- Colors, typography, spacing. One source so UI stays consistent across agents. -->
+
+## Colors
+- <name>: <value>
+
+## Typography
+- <name>: <value>
+
+## Spacing
+- <name>: <value>
+EOF
+;;
+  esac
+}
+
+cmd_spec() {
+  [ -z "${ROOT:-}" ] && { echo "continuum: no .aicontext/ ledger found from $PWD (run this inside a Continuum project)." >&2; return 1; }
+  local sd="$ROOT/.aicontext/spec" n
+  if [ "${1:-}" = "init" ]; then
+    mkdir -p "$sd"; local created=0
+    for n in $SPEC_FILES; do
+      [ -f "$sd/$n.md" ] && continue
+      write_spec_stub "$n" "$sd/$n.md"; created=$((created+1))
+    done
+    echo "continuum: spec store ready at .aicontext/spec/ ($created new file(s); existing left untouched)."
+    return 0
+  fi
+  if [ ! -d "$sd" ] || ! ls "$sd"/*.md >/dev/null 2>&1; then
+    echo "continuum: no spec store yet. Create one:  continuum spec init"; return 0
+  fi
+  local f
+  for f in "$sd"/*.md; do
+    [ -f "$f" ] || continue
+    echo "----- spec/$(basename "$f") -----"; cat "$f"; echo
+  done
+}
+
 # Print the header comment block (from line 2 to the first non-comment line), stripped of '# '.
 usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; }
 
@@ -685,7 +798,31 @@ esac
 CUR_TRANSCRIPT="$(read_stdin_field transcript_path 2>/dev/null || true)"
 if ! ROOT="$(find_root)"; then
   case "$CMD" in precompact|guard) exit 0;; esac   # project-only hooks: nothing to do without a ledger
+  case "$CMD" in save|verify|compact|import|status|doctor|spec)
+    echo 'continuum: no .aicontext/ ledger found from this directory.' >&2; exit 1;; esac
   ROOT=""   # catch-up still runs (to inject global memory); remember/forget/memory don't need a project
+fi
+
+# Exclusive-create file locks serialize read-modify-write commands across both helpers.
+# Do not steal a timed-out lock: a verification command may legitimately be long-running.
+LOCK_DIR=""
+case "$CMD" in
+  remember|forget) LOCK_DIR="$(mem_dir)/.write-lock";;
+  save|verify|compact) LOCK_DIR="$ROOT/.aicontext/.write-lock";;
+  spec) [ "${1:-}" = init ] && LOCK_DIR="$ROOT/.aicontext/.write-lock";;
+esac
+if [ -n "$LOCK_DIR" ]; then
+  mkdir -p "$(dirname "$LOCK_DIR")" || exit 1
+  lock_tries=0
+  until ( set -o noclobber; : > "$LOCK_DIR" ) 2>/dev/null; do
+    lock_tries=$((lock_tries+1))
+    if [ "$lock_tries" -ge 200 ]; then
+      echo "continuum: write lock busy: $LOCK_DIR (retry; after a crash, remove only when no writer is running)" >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+  trap 'rm -f -- "$LOCK_DIR"' EXIT
 fi
 
 case "$CMD" in
@@ -701,6 +838,7 @@ case "$CMD" in
   import)     cmd_import "$@" ;;
   status)     cmd_status ;;
   context)    cmd_context ;;
+  spec)       cmd_spec "$@" ;;
   doctor)     cmd_doctor ;;
   remember)   cmd_remember "$@" ;;
   forget)     cmd_forget "$@" ;;
