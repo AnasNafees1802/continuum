@@ -24,8 +24,8 @@ is your judgment; the script only handles mechanics. If the hooks didn't run (an
 disabled), just follow the three moments manually as below.
 
 ### The helper CLI
-Installed at `.claude/skills/continuum/bin/continuum.{ps1,sh}` (project) or `~/.continuum/bin/`
-(global, shared by every agent's hooks). Run the one matching the platform:
+Installed beside this skill under `bin/continuum.{ps1,sh}`, or at `~/.continuum/bin/`
+(global, shared by every agent). Run the one matching the platform:
 - Windows: `powershell -ExecutionPolicy Bypass -File <path>\continuum.ps1 <command>`
 - macOS/Linux: `bash <path>/continuum.sh <command>`
 

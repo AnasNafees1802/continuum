@@ -155,14 +155,14 @@ $CursorDefs = @(
 )
 $WindsurfDefs = @( @{ e = 'pre_user_prompt'; a = 'catch-up --once --event pre_user_prompt' } )
 
-# name | detection dir | instruction (block) file or $null | hookKind | hook file | defs | install-claude-skill
+# name | detection dir | instruction (block) file or $null | hookKind | hook file | defs | skill target
 $agents = @(
-    @{ name = 'Claude Code'; dir = Join-Path $Home_ '.claude'; block = Join-Path $Home_ '.claude\CLAUDE.md'; kind = 'nested'; hook = Join-Path $Home_ '.claude\settings.json'; defs = $NestedFull; skill = $true }
-    @{ name = 'Codex'; dir = Join-Path $Home_ '.codex'; block = Join-Path $Home_ '.codex\AGENTS.md'; kind = 'nested'; hook = Join-Path $Home_ '.codex\hooks.json'; defs = $NestedFull; skill = $false }
-    @{ name = 'Gemini CLI'; dir = Join-Path $Home_ '.gemini'; block = Join-Path $Home_ '.gemini\GEMINI.md'; kind = 'nested'; hook = Join-Path $Home_ '.gemini\settings.json'; defs = $GeminiDefs; skill = $false }
-    @{ name = 'Antigravity'; dir = Join-Path $Home_ '.gemini'; block = Join-Path $Home_ '.gemini\AGENTS.md'; kind = 'none'; hook = $null; defs = $null; skill = $false }
-    @{ name = 'Cursor'; dir = Join-Path $Home_ '.cursor'; block = $null; kind = 'cursor'; hook = Join-Path $Home_ '.cursor\hooks.json'; defs = $CursorDefs; skill = $false }
-    @{ name = 'Windsurf'; dir = Join-Path $Home_ '.codeium\windsurf'; block = Join-Path $Home_ '.codeium\windsurf\memories\global_rules.md'; kind = 'windsurf'; hook = Join-Path $Home_ '.codeium\windsurf\hooks.json'; defs = $WindsurfDefs; skill = $false }
+    @{ name = 'Claude Code'; dir = Join-Path $Home_ '.claude'; block = Join-Path $Home_ '.claude\CLAUDE.md'; kind = 'nested'; hook = Join-Path $Home_ '.claude\settings.json'; defs = $NestedFull; skill = '.claude\skills\continuum' }
+    @{ name = 'Codex'; dir = Join-Path $Home_ '.codex'; block = Join-Path $Home_ '.codex\AGENTS.md'; kind = 'nested'; hook = Join-Path $Home_ '.codex\hooks.json'; defs = $NestedFull; skill = $null }
+    @{ name = 'Gemini CLI'; dir = Join-Path $Home_ '.gemini'; block = Join-Path $Home_ '.gemini\GEMINI.md'; kind = 'nested'; hook = Join-Path $Home_ '.gemini\settings.json'; defs = $GeminiDefs; skill = $null }
+    @{ name = 'Antigravity'; dir = Join-Path $Home_ '.gemini'; block = Join-Path $Home_ '.gemini\AGENTS.md'; kind = 'none'; hook = $null; defs = $null; skill = '.gemini\config\skills\continuum' }
+    @{ name = 'Cursor'; dir = Join-Path $Home_ '.cursor'; block = $null; kind = 'cursor'; hook = Join-Path $Home_ '.cursor\hooks.json'; defs = $CursorDefs; skill = $null }
+    @{ name = 'Windsurf'; dir = Join-Path $Home_ '.codeium\windsurf'; block = Join-Path $Home_ '.codeium\windsurf\memories\global_rules.md'; kind = 'windsurf'; hook = Join-Path $Home_ '.codeium\windsurf\hooks.json'; defs = $WindsurfDefs; skill = $null }
 )
 
 $snippet = Read-Text (Join-Path $Src 'adapters/global.md')
@@ -229,12 +229,12 @@ foreach ($a in $agents) {
         Write-Host ("      protocol block {0} -> {1}" -f $result, $a.block.Replace($Home_, '~')) -ForegroundColor DarkGray
     }
     if ($a.skill) {
-        $skillDir = Join-Path $Home_ '.claude\skills\continuum'
+        $skillDir = Join-Path $Home_ $a.skill
         New-Item -ItemType Directory -Force -Path (Join-Path $skillDir 'bin') | Out-Null
         Copy-Item -LiteralPath (Join-Path $Src 'skill/continuum/SKILL.md') -Destination $skillDir -Force
         Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.ps1') -Destination (Join-Path $skillDir 'bin') -Force
         Copy-Item -LiteralPath (Join-Path $Src 'bin/continuum.sh') -Destination (Join-Path $skillDir 'bin') -Force
-        Write-Host "      skill installed -> ~\.claude\skills\continuum\" -ForegroundColor DarkGray
+        Write-Host ("      skill installed -> " + $skillDir.Replace($Home_, '~') + '\') -ForegroundColor DarkGray
     }
     switch ($a.kind) {
         'nested' { Wire-Nested $a.hook $a.defs; Write-Host ("      hooks wired -> " + $a.hook.Replace($Home_, '~')) -ForegroundColor DarkGray }

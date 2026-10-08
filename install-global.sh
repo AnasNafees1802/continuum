@@ -119,14 +119,14 @@ GEMINI_DEFS='[{"e":"SessionStart","m":"startup|resume|clear","a":"catch-up --eve
 CURSOR_DEFS='[{"e":"sessionStart","a":"catch-up --event sessionStart"},{"e":"preCompact","a":"precompact --event preCompact"},{"e":"stop","a":"guard"}]'
 WINDSURF_DEFS='[{"e":"pre_user_prompt","a":"catch-up --once --event pre_user_prompt"}]'
 
-# name|detect dir|block file(-)|kind|hook file(-)|skill(0/1)
+# name|detect dir|block file(-)|kind|hook file(-)|skill target(-)
 AGENTS=(
-  "Claude Code|$HOME_DIR/.claude|$HOME_DIR/.claude/CLAUDE.md|nested|$HOME_DIR/.claude/settings.json|1"
-  "Codex|$HOME_DIR/.codex|$HOME_DIR/.codex/AGENTS.md|nested|$HOME_DIR/.codex/hooks.json|0"
-  "Gemini CLI|$HOME_DIR/.gemini|$HOME_DIR/.gemini/GEMINI.md|gemini|$HOME_DIR/.gemini/settings.json|0"
-  "Antigravity|$HOME_DIR/.gemini|$HOME_DIR/.gemini/AGENTS.md|none|-|0"
-  "Cursor|$HOME_DIR/.cursor|-|cursor|$HOME_DIR/.cursor/hooks.json|0"
-  "Windsurf|$HOME_DIR/.codeium/windsurf|$HOME_DIR/.codeium/windsurf/memories/global_rules.md|windsurf|$HOME_DIR/.codeium/windsurf/hooks.json|0"
+  "Claude Code|$HOME_DIR/.claude|$HOME_DIR/.claude/CLAUDE.md|nested|$HOME_DIR/.claude/settings.json|.claude/skills/continuum"
+  "Codex|$HOME_DIR/.codex|$HOME_DIR/.codex/AGENTS.md|nested|$HOME_DIR/.codex/hooks.json|-"
+  "Gemini CLI|$HOME_DIR/.gemini|$HOME_DIR/.gemini/GEMINI.md|gemini|$HOME_DIR/.gemini/settings.json|-"
+  "Antigravity|$HOME_DIR/.gemini|$HOME_DIR/.gemini/AGENTS.md|none|-|.gemini/config/skills/continuum"
+  "Cursor|$HOME_DIR/.cursor|-|cursor|$HOME_DIR/.cursor/hooks.json|-"
+  "Windsurf|$HOME_DIR/.codeium/windsurf|$HOME_DIR/.codeium/windsurf/memories/global_rules.md|windsurf|$HOME_DIR/.codeium/windsurf/hooks.json|-"
 )
 
 show_banner() {
@@ -175,12 +175,13 @@ for entry in "${AGENTS[@]}"; do
   fi
   printf '  + %-12s\n' "$name"
   [ "$block" != "-" ] && set_managed_block "$block"
-  if [ "$skill" = "1" ]; then
-    mkdir -p "$HOME_DIR/.claude/skills/continuum/bin"
-    cp "$SRC/skill/continuum/SKILL.md" "$HOME_DIR/.claude/skills/continuum/SKILL.md"
-    cp "$SRC/bin/continuum.sh" "$HOME_DIR/.claude/skills/continuum/bin/continuum.sh"
-    cp "$SRC/bin/continuum.ps1" "$HOME_DIR/.claude/skills/continuum/bin/continuum.ps1"
-    echo "      skill installed -> ~/.claude/skills/continuum/"
+  if [ "$skill" != "-" ]; then
+    skill_dir="$HOME_DIR/$skill"
+    mkdir -p "$skill_dir/bin"
+    cp "$SRC/skill/continuum/SKILL.md" "$skill_dir/SKILL.md"
+    cp "$SRC/bin/continuum.sh" "$skill_dir/bin/continuum.sh"
+    cp "$SRC/bin/continuum.ps1" "$skill_dir/bin/continuum.ps1"
+    echo "      skill installed -> ~/$skill/"
   fi
   case "$kind" in
     nested)   merge_hooks "$hook" nested   "$NESTED_FULL" ;;

@@ -206,6 +206,15 @@ class InstallerChecks:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(f.read_text(), body)
 
+    def test_global_installs_antigravity_skill_in_supported_path(self):
+        (self.root / '.gemini').mkdir()
+        self.install()
+        skill = self.root / '.gemini/config/skills/continuum/SKILL.md'
+        self.assertTrue(skill.is_file())
+        self.assertIn('name: continuum', skill.read_text(encoding='utf-8'))
+        self.assertTrue((skill.parent / 'bin/continuum.ps1').is_file())
+        self.assertTrue((skill.parent / 'bin/continuum.sh').is_file())
+
 
 class HelperChecks:
     def command(self):

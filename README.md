@@ -101,8 +101,8 @@ No account, no cloud, no per-seat fee. The server is a thin adapter over the sam
 so hooks and MCP always agree.
 
 **Coverage, stated honestly:** Claude Code, Codex, Cursor, Windsurf, and Gemini run local stdio MCP
-servers, so they get Continuum over MCP *and* via native hooks / `AGENTS.md`. Antigravity shares the
-`~/.gemini` config and gets the `AGENTS.md` honor-protocol (plus MCP if it reads `settings.json`).
+servers, so they get Continuum over MCP *and* via native hooks / `AGENTS.md`. Antigravity gets a
+global Agent Skill plus the `AGENTS.md` honor-protocol fallback.
 ChatGPT's connectors are remote-HTTP only and cannot launch a local server, so Continuum reaches it
 through `AGENTS.md` and web bundles rather than MCP. One ledger, reached whichever way each tool allows.
 
@@ -227,7 +227,7 @@ protocol into that agent's global instruction file **and** wires its native hook
 | Claude Code | `~/.claude/CLAUDE.md` + skill `~/.claude/skills/continuum/` | `~/.claude/settings.json` |
 | Codex | `~/.codex/AGENTS.md` | `~/.codex/hooks.json` |
 | Gemini CLI | `~/.gemini/GEMINI.md` | `~/.gemini/settings.json` |
-| Antigravity | `~/.gemini/AGENTS.md` (cross-tool; avoids the GEMINI.md conflict) | n/a |
+| Antigravity | `~/.gemini/config/skills/continuum/` + `~/.gemini/AGENTS.md` fallback | n/a |
 | Cursor | (User Rules / `AGENTS.md` in-repo) | `~/.cursor/hooks.json` |
 | Windsurf | `~/.codeium/windsurf/memories/global_rules.md` | `~/.codeium/windsurf/hooks.json` |
 
@@ -299,14 +299,14 @@ actual prose**; that judgment isn't something to automate away.
 |-------|:---:|:---:|:---:|:---:|:---:|
 | Claude Code | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native | ✅ verified |
 | Codex | ✅ `SessionStart` hook | ✅ `PreCompact` | ✅ `Stop` | ✅ native (cwd-matched) | ✅ verified |
-| Antigravity | ✅ honor-protocol¹ |, |, | git-based² | ✅ verified |
+| Antigravity | ✅ skill + honor-protocol¹ |, |, | git-based² | ✅ verified |
 | Gemini CLI | ✅ `SessionStart` hook | ✅ `PreCompress` |, | ✅ native | 🧪 beta |
 | Cursor | ✅ `sessionStart` hook | ✅ `preCompact` | ✅ `stop` | git-based | 🧪 beta |
 | Windsurf | ✅ first per-turn hook |, |, | git-based | 🧪 untested |
 
 <sub>**Status** = has it been confirmed on a real session? ✅ verified · 🧪 not yet. ¹ Antigravity has no
-hook system, so catch-up rides the honor-protocol (it reads `AGENTS.md`/`GEMINI.md` and can run the
-`continuum` CLI itself). ² Its transcripts are binary, so reconstruction uses the git floor.</sub>
+Continuum hook integration, so catch-up runs through its Agent Skill or the honor-protocol fallback.
+² Its transcripts are binary, so reconstruction uses the git floor.</sub>
 
 > **Universal floor:** even where native hooks or transcript parsing aren't available, the
 > **git-based reconstruction** (`--from git`, always included in `auto`) rebuilds "what changed" from

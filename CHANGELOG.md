@@ -3,6 +3,12 @@
 All notable changes to Continuum are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-10-08
+
+### Fixed
+- Install Continuum into Antigravity's supported global skills directory so `/continuum` is
+  discoverable across workspaces, while retaining the global `AGENTS.md` protocol fallback.
+
 ## [2.5.0] - 2026-10-06
 
 ### Reliability fixes
